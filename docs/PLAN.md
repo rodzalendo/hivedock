@@ -52,14 +52,23 @@ Exit (verified on PCT 102 against `/opt/stacks-test`): edit a compose file over 
 
 Goal: the differentiator. Zero-config dashboard.
 
-- [ ] Discovery resolver: name/url/group/hidden per priority chains in ARCHITECTURE.md §3, including `homepage.*` label fallback
-- [ ] Icon matcher: build-time fetch of dashboard-icons manifest, normalization (strip registry/org/tag, kebab-case), runtime local cache, selfh.st fallback, letter avatar
-- [ ] URL heuristic incl. multi-port dropdown, https detection
-- [ ] Sidecar auto-hide heuristic + unhide toggle persisted in SQLite
-- [ ] Home view: grouped card grid, status dots, search/filter, host stats strip
-- [ ] Empty state ("No stacks found in /opt/stacks...")
+- [x] Discovery resolver: name/url/group/hidden per priority chains in ARCHITECTURE.md §3, including `homepage.*` label fallback
+- [x] Icon matcher: dashboard-icons CDN fetch + alias table, runtime local cache (DATA_DIR/icons), letter-avatar fallback (UI), negative cache — **note:** runtime CDN fetch instead of build-time manifest embed; selfh.st fallback deferred (post-v1 refinement)
+- [x] URL heuristic incl. multi-port dropdown, https detection
+- [x] Sidecar auto-hide heuristic + unhide toggle persisted in SQLite
+- [x] Home view: grouped card grid, status dots, search/filter, host stats strip
+- [x] Empty state ("No stacks found in /opt/stacks...")
 
 Exit: fixture stacks render with correct icons and clickable URLs, zero labels required; the `homepage.*`-labeled fixture uses its labels.
+
+> Progress note: Phase 2 code-complete and verified locally against a live
+> daemon — `homepage.*` labels honored (name/group/icon), postgres/redis
+> sidecars auto-hidden, mailpit multi-port dropdown, URLs from `PUBLIC_HOST`,
+> icons fetched+cached from the dashboard-icons CDN (incl. `whoami`→`traefik`
+> alias) with 404→letter-avatar. Two deliberate deviations from the bullet: icon
+> resolution is runtime-CDN + cache rather than a build-time embedded manifest,
+> and the selfh.st secondary source is deferred (letter avatar already covers
+> misses). Remaining before phase exit: verification on PCT 102.
 
 ## Phase 3 — Mutations (2–3 sessions)
 
