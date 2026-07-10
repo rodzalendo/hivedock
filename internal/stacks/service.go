@@ -18,15 +18,22 @@ type Manager struct {
 	stacksDir string
 	docker    ContainerLister
 	logger    *slog.Logger
+	drift     *driftChecker
 }
 
 // NewManager builds the stacks manager. docker may be nil (e.g. daemon
 // unavailable at startup); List then returns managed stacks with unknown status.
 func NewManager(stacksDir string, dockerClient ContainerLister, logger *slog.Logger) *Manager {
-	return &Manager{stacksDir: stacksDir, docker: dockerClient, logger: logger}
+	return &Manager{
+		stacksDir: stacksDir,
+		docker:    dockerClient,
+		logger:    logger,
+		drift:     newDriftChecker(nil),
+	}
 }
 
-// List returns all stacks (managed + external), merged with runtime state.
+// List returns all stacks (managed + external), merged with runtime state and
+// drift flags.
 func (s *Manager) List(ctx context.Context) ([]Stack, error) {
 	scanned, err := Scan(s.stacksDir)
 	if err != nil {
@@ -34,7 +41,26 @@ func (s *Manager) List(ctx context.Context) ([]Stack, error) {
 	}
 
 	containers, daemonOK := s.listContainers(ctx)
-	return Merge(scanned, containers, daemonOK), nil
+
+	// Drift only makes sense when we can compare against running containers.
+	var fileHashes map[string]map[string]string
+	if daemonOK {
+		fileHashes = s.computeHashes(ctx, scanned)
+	}
+	return Merge(scanned, containers, daemonOK, fileHashes), nil
+}
+
+// computeHashes gathers on-disk config hashes for managed stacks (cached by
+// file mtime). Failures are logged and skipped — a missing compose CLI must not
+// break the listing, it just means no drift badges.
+func (s *Manager) computeHashes(ctx context.Context, scanned []ScannedStack) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, st := range scanned {
+		if h, ok := s.drift.hashesFor(ctx, st); ok {
+			out[st.Name] = h
+		}
+	}
+	return out
 }
 
 // Get returns a single stack by name (directory name for managed, project or

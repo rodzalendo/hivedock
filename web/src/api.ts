@@ -25,6 +25,7 @@ export interface Service {
   runningImage?: string;
   state: string; // running | exited | created | absent | ...
   status?: string;
+  drifted?: boolean;
   containerId?: string;
   ports?: Port[];
 }
@@ -34,6 +35,7 @@ export interface Stack {
   project: string;
   origin: Origin;
   status: StackStatus;
+  drifted?: boolean;
   dir?: string;
   composeFile?: string;
   services: Service[];

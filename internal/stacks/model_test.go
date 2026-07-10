@@ -44,7 +44,7 @@ func TestMergeClassifiesManagedExternalStandalone(t *testing.T) {
 		{ID: "ffffffffffff0000", Name: "whoami-whoami-run-1", Image: "traefik/whoami", State: "exited", Project: "whoami", Service: "whoami", Oneoff: true},
 	}
 
-	stacks := Merge(scanned, containers, true)
+	stacks := Merge(scanned, containers, true, nil)
 
 	whoami, ok := findStack(stacks, "whoami")
 	if !ok || whoami.Origin != OriginManaged || whoami.Status != StatusRunning {
@@ -75,7 +75,7 @@ func TestMergeDaemonDownShowsManagedOnly(t *testing.T) {
 		{Name: "whoami", Project: "whoami", Services: map[string]ScannedSvc{"whoami": {Image: "x"}}},
 	}
 	// daemonOK=false: managed stacks show with unknown status, no external.
-	stacks := Merge(scanned, nil, false)
+	stacks := Merge(scanned, nil, false, nil)
 	if len(stacks) != 1 {
 		t.Fatalf("expected only managed stack, got %d", len(stacks))
 	}
@@ -94,7 +94,7 @@ func TestMergeSurfacesRunningServiceNotInFile(t *testing.T) {
 		{ID: "111111111111", Name: "app-web-1", Image: "nginx", State: "running", Project: "app", Service: "web"},
 		{ID: "222222222222", Name: "app-ghost-1", Image: "redis", State: "running", Project: "app", Service: "ghost"},
 	}
-	stacks := Merge(scanned, containers, true)
+	stacks := Merge(scanned, containers, true, nil)
 	app, _ := findStack(stacks, "app")
 	if len(app.Services) != 2 {
 		t.Fatalf("expected 2 services (web + surfaced ghost), got %d: %+v", len(app.Services), app.Services)

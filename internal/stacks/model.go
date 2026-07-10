@@ -35,6 +35,7 @@ type Stack struct {
 	Project     string    `json:"project"`
 	Origin      Origin    `json:"origin"`
 	Status      Status    `json:"status"`
+	Drifted     bool      `json:"drifted,omitempty"` // running config differs from the compose file
 	Dir         string    `json:"dir,omitempty"`
 	ComposeFile string    `json:"composeFile,omitempty"`
 	Services    []Service `json:"services"`
@@ -43,13 +44,14 @@ type Stack struct {
 // Service is a merged service: its desired image (from the compose file) and
 // its running container state (from the daemon), whichever exist.
 type Service struct {
-	Name        string        `json:"name"`
-	Image       string        `json:"image"`                 // desired (compose) if known, else running
-	RunningImage string       `json:"runningImage,omitempty"` // actual image on the container
-	State       string        `json:"state"`                 // running/exited/created/... or "absent"
-	Status      string        `json:"status,omitempty"`
-	ContainerID string        `json:"containerId,omitempty"`
-	Ports       []docker.Port `json:"ports,omitempty"`
+	Name         string        `json:"name"`
+	Image        string        `json:"image"`                  // desired (compose) if known, else running
+	RunningImage string        `json:"runningImage,omitempty"` // actual image on the container
+	State        string        `json:"state"`                  // running/exited/created/... or "absent"
+	Status       string        `json:"status,omitempty"`
+	Drifted      bool          `json:"drifted,omitempty"` // this service's running config-hash != file
+	ContainerID  string        `json:"containerId,omitempty"`
+	Ports        []docker.Port `json:"ports,omitempty"`
 }
 
 var projectSanitize = regexp.MustCompile(`[^a-z0-9_-]`)
@@ -63,7 +65,12 @@ func NormalizeProject(dirBase string) string {
 // Merge combines scanned (on-disk) stacks with running containers into the
 // classified truth model. daemonOK=false means the container list is unreliable
 // (daemon unreachable): managed stacks still show, with unknown status.
-func Merge(scanned []ScannedStack, containers []docker.Container, daemonOK bool) []Stack {
+//
+// fileHashes maps stack name -> service -> on-disk config hash (from
+// `docker compose config --hash`); when present, a running container whose
+// com.docker.compose.config-hash differs is flagged as drifted. Pass nil to
+// skip drift detection.
+func Merge(scanned []ScannedStack, containers []docker.Container, daemonOK bool, fileHashes map[string]map[string]string) []Stack {
 	// Index running containers by compose project (skip one-off `compose run`).
 	byProject := map[string][]docker.Container{}
 	var standalone []docker.Container
@@ -85,7 +92,7 @@ func Merge(scanned []ScannedStack, containers []docker.Container, daemonOK bool)
 	for _, s := range scanned {
 		cts := byProject[s.Project]
 		matchedProjects[s.Project] = true
-		out = append(out, buildManaged(s, cts, daemonOK))
+		out = append(out, buildManaged(s, cts, daemonOK, fileHashes[s.Name]))
 	}
 
 	// 2. External compose projects: running, but no compose file under STACKS_DIR.
@@ -112,7 +119,7 @@ func Merge(scanned []ScannedStack, containers []docker.Container, daemonOK bool)
 	return out
 }
 
-func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool) Stack {
+func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool, hashes map[string]string) Stack {
 	byService := indexByService(cts)
 
 	// Union of compose-defined services and any running services (a running
@@ -125,6 +132,7 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool) Stack {
 		names[svc] = true
 	}
 
+	stackDrift := false
 	var services []Service
 	for name := range names {
 		svc := Service{Name: name, State: "absent"}
@@ -133,6 +141,12 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool) Stack {
 		}
 		if ct, ok := byService[name]; ok {
 			applyContainer(&svc, ct)
+			// Drift: the running container's config-hash differs from the
+			// hash of the current on-disk config for this service.
+			if fileHash, ok := hashes[name]; ok && ct.ConfigHash != "" && fileHash != ct.ConfigHash {
+				svc.Drifted = true
+				stackDrift = true
+			}
 		}
 		services = append(services, svc)
 	}
@@ -143,6 +157,7 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool) Stack {
 		Project:     s.Project,
 		Origin:      OriginManaged,
 		Status:      summarize(services, daemonOK),
+		Drifted:     stackDrift,
 		Dir:         s.Dir,
 		ComposeFile: s.ComposeFile,
 		Services:    services,

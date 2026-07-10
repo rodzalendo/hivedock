@@ -34,6 +34,17 @@ export function ServiceDot({ state }: { state: string }) {
   );
 }
 
+export function DriftBadge() {
+  return (
+    <span
+      className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-400"
+      title="The running container's config differs from the compose file on disk"
+    >
+      drift
+    </span>
+  );
+}
+
 export function OriginBadge({ origin }: { origin: Origin }) {
   const managed = origin === "managed";
   return (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchStacks, type Stack, type Service } from "../api";
-import { OriginBadge, ServiceDot, StatusDot } from "../components/ui";
+import { DriftBadge, OriginBadge, ServiceDot, StatusDot } from "../components/ui";
 
 export default function Stacks() {
   const { data, isLoading, isError, error } = useQuery({
@@ -121,6 +121,7 @@ function StackRow({
         <StatusDot status={stack.status} />
         <span className="truncate text-sm text-zinc-100">{stack.name}</span>
         <span className="ml-auto flex items-center gap-2">
+          {stack.drifted && <DriftBadge />}
           <span className="text-xs text-zinc-500">
             {running}/{stack.services.length}
           </span>
@@ -138,6 +139,7 @@ function StackDetail({ stack }: { stack: Stack }) {
         <StatusDot status={stack.status} />
         <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
         <OriginBadge origin={stack.origin} />
+        {stack.drifted && <DriftBadge />}
         <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
       </div>
 
@@ -176,7 +178,12 @@ function StackDetail({ stack }: { stack: Stack }) {
 function ServiceRow({ svc }: { svc: Service }) {
   return (
     <tr className="border-t border-zinc-800/60">
-      <td className="py-2 pr-4 text-zinc-200">{svc.name}</td>
+      <td className="py-2 pr-4 text-zinc-200">
+        <span className="inline-flex items-center gap-2">
+          {svc.name}
+          {svc.drifted && <DriftBadge />}
+        </span>
+      </td>
       <td className="py-2 pr-4 font-mono text-xs text-zinc-400">{svc.image}</td>
       <td className="py-2 pr-4">
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
