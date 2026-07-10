@@ -65,6 +65,43 @@ export interface HostStats {
   sampledAt?: string;
 }
 
+export interface PortLink {
+  label: string;
+  url: string;
+}
+
+export interface HomeEntry {
+  stack: string;
+  service: string;
+  name: string;
+  group: string;
+  url?: string;
+  ports?: PortLink[];
+  iconSlug?: string;
+  icon?: string; // explicit icon label (may be a URL or a slug)
+  description?: string;
+  status: string;
+  hidden: boolean;
+}
+
+export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
+
+export async function setServiceVisibility(
+  stack: string,
+  service: string,
+  hidden: boolean,
+): Promise<void> {
+  const res = await fetch(
+    `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/visibility`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden }),
+    },
+  );
+  if (!res.ok) throw new Error(`failed to update visibility: ${res.status}`);
+}
+
 export const fetchHealth = () => getJSON<Health>("/api/health");
 export const fetchStacks = () => getJSON<Stack[]>("/api/stacks");
 export const fetchStack = (name: string) =>

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/stacks"
@@ -25,8 +27,11 @@ func testHandler(t *testing.T, dist fs.FS) http.Handler {
 	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
 	hub := events.NewHub(50 * time.Millisecond)
 	host := hoststats.NewSampler(time.Second)
+	icons := discovery.NewIconResolver(t.TempDir(), func(context.Context, string) ([]byte, string, bool) {
+		return nil, "", false
+	})
 	// db and docker are unused by the routes under test; keep them nil.
-	return New(cfg, logger, nil, stacksSvc, hub, host, nil, dist)
+	return New(cfg, logger, nil, stacksSvc, hub, host, nil, icons, dist)
 }
 
 func TestHealth(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/hoststats"
@@ -25,13 +26,13 @@ import (
 var version = "dev"
 
 // New builds the top-level HTTP handler.
-func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, dist fs.FS) http.Handler {
+func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", api.health)
@@ -39,6 +40,9 @@ func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *sta
 		r.Get("/stacks", api.listStacks)
 		r.Get("/stacks/{name}", api.getStack)
 		r.Get("/host/stats", api.hostStats)
+		r.Get("/home", api.listHome)
+		r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
+		r.Get("/icons/{slug}", api.icon)
 	})
 
 	// Everything else is the SPA (client-side routing → index.html fallback).
@@ -55,6 +59,7 @@ type api struct {
 	hub    *events.Hub
 	host   *hoststats.Sampler
 	docker *docker.Client // may be nil (no daemon)
+	icons  *discovery.IconResolver
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {

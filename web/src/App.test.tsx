@@ -24,6 +24,20 @@ function mockApi() {
           numCpu: 0,
         });
       }
+      if (url.includes("/api/home")) {
+        return jsonResponse([
+          {
+            stack: "jellyfin",
+            service: "jellyfin",
+            name: "Jellyfin",
+            group: "Media",
+            url: "http://host:8096",
+            iconSlug: "jellyfin",
+            status: "running",
+            hidden: false,
+          },
+        ]);
+      }
       if (url.includes("/api/stacks")) {
         return jsonResponse([
           {
@@ -70,11 +84,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("renders the stacks list by default", async () => {
+test("renders the home dashboard by default", async () => {
   mockApi();
   renderApp();
 
   expect(screen.getByText("Hivedock")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText("Jellyfin")).toBeInTheDocument());
+  expect(screen.getByText("Media")).toBeInTheDocument();
+});
+
+test("navigating to Stacks shows the stacks list", async () => {
+  mockApi();
+  renderApp();
+
+  fireEvent.click(screen.getByRole("button", { name: /Stacks/i }));
   await waitFor(() => expect(screen.getByText("whoami")).toBeInTheDocument());
   expect(screen.getByText("Managed")).toBeInTheDocument();
 });

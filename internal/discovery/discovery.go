@@ -1,0 +1,121 @@
+// Package discovery turns the stacks truth model into homepage cards with zero
+// config: it resolves each user-facing service's name/group/url/icon/hidden via
+// the priority chains in docs/ARCHITECTURE.md §3 (hivedock.* label →
+// homepage.* label → automatic heuristic). Pure and deterministic; the icon
+// matcher (icon.go) turns the resolved slug into an asset.
+package discovery
+
+import (
+	"sort"
+
+	"github.com/rogalinski/hivedock/internal/stacks"
+)
+
+// PortLink is one published-port destination for a card.
+type PortLink struct {
+	Label string `json:"label"` // e.g. "8096/tcp"
+	URL   string `json:"url"`
+}
+
+// Entry is a resolved homepage card (one per user-facing service).
+type Entry struct {
+	Stack       string     `json:"stack"`
+	Service     string     `json:"service"`
+	Name        string     `json:"name"`
+	Group       string     `json:"group"`
+	URL         string     `json:"url,omitempty"`
+	Ports       []PortLink `json:"ports,omitempty"`
+	IconSlug    string     `json:"iconSlug,omitempty"` // normalized image slug (icon matcher resolves it)
+	Icon        string     `json:"icon,omitempty"`     // explicit icon label if set
+	Description string     `json:"description,omitempty"`
+	Status      string     `json:"status"` // running | stopped | ...
+	Hidden      bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
+}
+
+// Options tune resolution.
+type Options struct {
+	// Host is the host:ip the browser reaches Hivedock at, used to build port
+	// URLs (from the request Host header or a configured PUBLIC_HOST).
+	Host string
+	// HiddenOverride reports a user's explicit hide/unhide for a service, taking
+	// precedence over the auto-hide heuristic. Returns (value, set).
+	HiddenOverride func(stack, service string) (bool, bool)
+}
+
+// Resolve produces one entry per service across all stacks (managed + external).
+func Resolve(all []stacks.Stack, opts Options) []Entry {
+	var entries []Entry
+	for _, st := range all {
+		// Candidates are the non-hidden services; a single-candidate managed
+		// stack gets the stack's name as its default card name.
+		candidates := 0
+		for _, svc := range st.Services {
+			if !isHidden(st, svc, opts) {
+				candidates++
+			}
+		}
+		for _, svc := range st.Services {
+			entries = append(entries, resolveOne(st, svc, candidates, opts))
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Group != entries[j].Group {
+			return entries[i].Group < entries[j].Group
+		}
+		return entries[i].Name < entries[j].Name
+	})
+	return entries
+}
+
+func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Options) Entry {
+	l := svc.Labels
+
+	name := firstLabel(l, "hivedock.name", "homepage.name")
+	if name == "" {
+		if candidates == 1 && st.Origin == stacks.OriginManaged {
+			name = humanize(st.Name)
+		} else {
+			name = humanize(svc.Name)
+		}
+	}
+
+	group := firstLabel(l, "hivedock.group", "homepage.group")
+	if group == "" {
+		group = humanize(st.Name)
+	}
+
+	url := firstLabel(l, "hivedock.url", "homepage.href", "homepage.url")
+	var ports []PortLink
+	if url == "" {
+		url, ports = urlHeuristic(svc, opts.Host)
+	}
+
+	e := Entry{
+		Stack:       st.Name,
+		Service:     svc.Name,
+		Name:        name,
+		Group:       group,
+		URL:         url,
+		Ports:       ports,
+		Icon:        firstLabel(l, "hivedock.icon", "homepage.icon"),
+		IconSlug:    normalizeImage(svc.Image),
+		Description: firstLabel(l, "hivedock.description", "homepage.description"),
+		Status:      svc.State,
+		Hidden:      isHidden(st, svc, opts),
+	}
+	return e
+}
+
+// isHidden applies the hidden priority chain: explicit label → user override →
+// auto-hide heuristic.
+func isHidden(st stacks.Stack, svc stacks.Service, opts Options) bool {
+	if v, ok := boolLabel(svc.Labels, "hivedock.hidden", "homepage.hidden"); ok {
+		return v
+	}
+	if opts.HiddenOverride != nil {
+		if v, set := opts.HiddenOverride(st.Name, svc.Name); set {
+			return v
+		}
+	}
+	return autoHide(svc)
+}

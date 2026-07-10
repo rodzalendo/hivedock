@@ -52,6 +52,11 @@ type Service struct {
 	Drifted      bool          `json:"drifted,omitempty"` // this service's running config-hash != file
 	ContainerID  string        `json:"containerId,omitempty"`
 	Ports        []docker.Port `json:"ports,omitempty"`
+
+	// Labels is the merged label set (compose file overlaid with runtime
+	// container labels). In-memory only — used by discovery, not serialized to
+	// keep /api/stacks lean.
+	Labels map[string]string `json:"-"`
 }
 
 var projectSanitize = regexp.MustCompile(`[^a-z0-9_-]`)
@@ -136,17 +141,22 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool, hashes 
 	var services []Service
 	for name := range names {
 		svc := Service{Name: name, State: "absent"}
+		var composeLabels map[string]string
 		if def, ok := s.Services[name]; ok {
 			svc.Image = def.Image
+			composeLabels = def.Labels
 		}
 		if ct, ok := byService[name]; ok {
 			applyContainer(&svc, ct)
+			svc.Labels = mergeLabels(composeLabels, ct.Labels)
 			// Drift: the running container's config-hash differs from the
 			// hash of the current on-disk config for this service.
 			if fileHash, ok := hashes[name]; ok && ct.ConfigHash != "" && fileHash != ct.ConfigHash {
 				svc.Drifted = true
 				stackDrift = true
 			}
+		} else {
+			svc.Labels = mergeLabels(composeLabels, nil)
 		}
 		services = append(services, svc)
 	}
@@ -170,6 +180,7 @@ func buildExternal(project string, cts []docker.Container) Stack {
 	for name, ct := range byService {
 		svc := Service{Name: name, State: "absent"}
 		applyContainer(&svc, ct)
+		svc.Labels = mergeLabels(nil, ct.Labels)
 		services = append(services, svc)
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
@@ -185,6 +196,7 @@ func buildExternal(project string, cts []docker.Container) Stack {
 func buildStandalone(ct docker.Container) Stack {
 	svc := Service{Name: ct.Name, State: "absent"}
 	applyContainer(&svc, ct)
+	svc.Labels = mergeLabels(nil, ct.Labels)
 	return Stack{
 		Name:     ct.Name,
 		Project:  "",
@@ -244,6 +256,24 @@ func summarize(services []Service, daemonOK bool) Status {
 	default:
 		return StatusPartial
 	}
+}
+
+// mergeLabels overlays runtime container labels on top of compose-file labels.
+// They normally agree (compose applies file labels to containers); the runtime
+// set wins for external containers where there's no file. Returns nil if both
+// are empty.
+func mergeLabels(compose, container map[string]string) map[string]string {
+	if len(compose) == 0 && len(container) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(compose)+len(container))
+	for k, v := range compose {
+		out[k] = v
+	}
+	for k, v := range container {
+		out[k] = v
+	}
+	return out
 }
 
 func shortID(id string) string {

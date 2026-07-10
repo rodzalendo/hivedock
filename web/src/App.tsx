@@ -1,17 +1,19 @@
 import { useState } from "react";
 import Home from "./views/Home";
 import Stacks from "./views/Stacks";
+import Dashboard from "./views/Dashboard";
 import { useLiveUpdates } from "./useLiveUpdates";
 
-type View = "stacks" | "status";
+type View = "home" | "stacks" | "status";
 
 const nav: { id: View; label: string; icon: string }[] = [
+  { id: "home", label: "Home", icon: "▦" },
   { id: "stacks", label: "Stacks", icon: "▤" },
   { id: "status", label: "Status", icon: "◉" },
 ];
 
 export default function App() {
-  const [view, setView] = useState<View>("stacks");
+  const [view, setView] = useState<View>("home");
   useLiveUpdates();
 
   return (
@@ -47,7 +49,9 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-x-hidden px-6 py-6 lg:px-8">
-        {view === "stacks" ? <Stacks /> : <Home />}
+        {view === "home" && <Dashboard />}
+        {view === "stacks" && <Stacks />}
+        {view === "status" && <Home />}
       </main>
     </div>
   );

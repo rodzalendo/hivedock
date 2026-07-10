@@ -18,6 +18,7 @@ type Config struct {
 	StacksDir    string     // STACKS_DIR — directory scanned for compose stacks
 	DataDir      string     // DATA_DIR — SQLite + app state live here
 	AuthDisabled bool       // AUTH_DISABLED — bypass auth (LAN test envs only)
+	PublicHost   string     // PUBLIC_HOST — host:port used to build homepage URLs (default: request Host)
 	LogLevel     slog.Level // LOG_LEVEL — debug|info|warn|error
 }
 
@@ -29,6 +30,7 @@ func Load() Config {
 		StacksDir:    env("STACKS_DIR", "./dev-stacks"),
 		DataDir:      env("DATA_DIR", "./data"),
 		AuthDisabled: envBool("AUTH_DISABLED", false),
+		PublicHost:   env("PUBLIC_HOST", ""),
 		LogLevel:     logLevel(env("LOG_LEVEL", "info")),
 	}
 }
