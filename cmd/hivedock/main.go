@@ -79,7 +79,7 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	host := hoststats.NewSampler(2 * time.Second)
 	go host.Run(ctx)
 
-	handler := server.New(cfg, logger, db, stacksSvc, hub, host, webui.Dist())
+	handler := server.New(cfg, logger, db, stacksSvc, hub, host, dockerClient, webui.Dist())
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

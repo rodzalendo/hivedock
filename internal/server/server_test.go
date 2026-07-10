@@ -25,8 +25,8 @@ func testHandler(t *testing.T, dist fs.FS) http.Handler {
 	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
 	hub := events.NewHub(50 * time.Millisecond)
 	host := hoststats.NewSampler(time.Second)
-	// db is unused by the routes under test; keep it nil to avoid touching disk.
-	return New(cfg, logger, nil, stacksSvc, hub, host, dist)
+	// db and docker are unused by the routes under test; keep them nil.
+	return New(cfg, logger, nil, stacksSvc, hub, host, nil, dist)
 }
 
 func TestHealth(t *testing.T) {

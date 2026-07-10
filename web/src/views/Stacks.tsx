@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchStacks, type Stack, type Service } from "../api";
 import { DriftBadge, OriginBadge, ServiceDot, StatusDot } from "../components/ui";
 import HostStrip from "../components/HostStrip";
+import LogsPanel from "../components/LogsPanel";
 
 export default function Stacks() {
   const { data, isLoading, isError, error } = useQuery({
@@ -137,6 +138,11 @@ function StackRow({
 }
 
 function StackDetail({ stack }: { stack: Stack }) {
+  const [tab, setTab] = useState<"containers" | "logs">("containers");
+
+  // Reset to containers tab when switching stacks.
+  const key = stack.name;
+
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
       <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
@@ -153,29 +159,66 @@ function StackDetail({ stack }: { stack: Stack }) {
         </div>
       )}
 
-      <div className="px-5 py-4">
-        <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+      <div className="flex gap-1 border-b border-zinc-800 px-3 pt-2">
+        <Tab active={tab === "containers"} onClick={() => setTab("containers")}>
           Containers
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-zinc-500">
-                <th className="pb-2 pr-4 font-medium">Service</th>
-                <th className="pb-2 pr-4 font-medium">Image</th>
-                <th className="pb-2 pr-4 font-medium">State</th>
-                <th className="pb-2 font-medium">Ports</th>
-              </tr>
-            </thead>
-            <tbody className="align-top">
-              {stack.services.map((svc) => (
-                <ServiceRow key={svc.name} svc={svc} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </Tab>
+        <Tab active={tab === "logs"} onClick={() => setTab("logs")}>
+          Logs
+        </Tab>
       </div>
+
+      {tab === "containers" ? (
+        <div className="px-5 py-4">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-zinc-500">
+                  <th className="pb-2 pr-4 font-medium">Service</th>
+                  <th className="pb-2 pr-4 font-medium">Image</th>
+                  <th className="pb-2 pr-4 font-medium">State</th>
+                  <th className="pb-2 font-medium">Ports</th>
+                </tr>
+              </thead>
+              <tbody className="align-top">
+                {stack.services.map((svc) => (
+                  <ServiceRow key={svc.name} svc={svc} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <LogsPanel
+          key={key}
+          stack={stack.name}
+          services={stack.services.map((s) => s.name)}
+        />
+      )}
     </div>
+  );
+}
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-t-lg px-3 py-1.5 text-sm transition ${
+        active
+          ? "bg-zinc-800/60 text-zinc-100"
+          : "text-zinc-500 hover:text-zinc-300"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

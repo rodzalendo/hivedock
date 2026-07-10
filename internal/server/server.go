@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/stacks"
@@ -24,13 +25,13 @@ import (
 var version = "dev"
 
 // New builds the top-level HTTP handler.
-func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dist fs.FS) http.Handler {
+func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", api.health)
@@ -53,6 +54,7 @@ type api struct {
 	stacks *stacks.Manager
 	hub    *events.Hub
 	host   *hoststats.Sampler
+	docker *docker.Client // may be nil (no daemon)
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {

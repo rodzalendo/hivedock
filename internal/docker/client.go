@@ -6,6 +6,8 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -76,6 +78,32 @@ type Container struct {
 // cancelled. Callers use these to know when to recompute the truth model.
 func (c *Client) Events(ctx context.Context) (<-chan events.Message, <-chan error) {
 	return c.cli.Events(ctx, events.ListOptions{})
+}
+
+// ContainerLogs returns the raw log stream for a container. If tty is false the
+// stream is Docker's multiplexed stdout/stderr framing and must be demuxed with
+// stdcopy; if true it's a raw byte stream. Follow keeps it open until ctx ends.
+func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, follow bool) (io.ReadCloser, bool, error) {
+	tty := false
+	if info, err := c.cli.ContainerInspect(ctx, id); err == nil {
+		tty = info.Config != nil && info.Config.Tty
+	}
+
+	tailStr := "all"
+	if tail > 0 {
+		tailStr = strconv.Itoa(tail)
+	}
+	rc, err := c.cli.ContainerLogs(ctx, id, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     follow,
+		Tail:       tailStr,
+		Timestamps: false,
+	})
+	if err != nil {
+		return nil, tty, fmt.Errorf("container logs %s: %w", id, err)
+	}
+	return rc, tty, nil
 }
 
 // ListContainers returns all containers (running and stopped), normalized.
