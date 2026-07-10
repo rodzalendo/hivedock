@@ -1,0 +1,11 @@
+# Keep the build context small.
+.git
+.gitignore
+data
+dev-stacks
+web/node_modules
+web/dist
+docs/TESTING-NOTES.md
+.env.local
+.env
+**/*.test

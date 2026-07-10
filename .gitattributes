@@ -1,0 +1,13 @@
+# Normalize line endings. Text files are LF in the repo; Git converts on
+# checkout per-platform. Files that MUST stay LF (they run on Linux) are pinned.
+* text=auto eol=lf
+
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+
+# Binary-ish assets — never touch.
+*.png binary
+*.ico binary
+*.woff2 binary

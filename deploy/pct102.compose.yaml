@@ -1,0 +1,19 @@
+# Copy to /opt/hivedock/compose.yaml on PCT 102 for the first deploy.
+# See docs/DEPLOYMENT.md. Test env only: AUTH_DISABLED behind the LAN, and
+# STACKS_DIR points at /opt/stacks-test until Phase 3 exit criteria pass.
+services:
+  hivedock:
+    image: hivedock:dev
+    container_name: hivedock
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - /opt/stacks-test:/opt/stacks-test   # same path inside and out — required
+    environment:
+      - STACKS_DIR=/opt/stacks-test
+      - DATA_DIR=/app/data
+      - AUTH_DISABLED=true                   # test env only; behind LAN
+      - LOG_LEVEL=info

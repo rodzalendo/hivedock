@@ -1,0 +1,102 @@
+version: "3"
+
+# Task runner for Hivedock. Install: https://taskfile.dev
+# `task --list` to see everything.
+
+dotenv: [".env.local"]
+
+vars:
+  IMAGE: hivedock:dev
+  STACKS_DIR:
+    sh: echo "${STACKS_DIR:-{{.TASKFILE_DIR}}/dev-stacks}"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  dev:
+    desc: "Run backend (:5001) and vite dev server (:5173) together"
+    deps: [dev:web, dev:go]
+
+  dev:go:
+    desc: "Run the Go server with hot config from ./dev-stacks"
+    env:
+      PORT: "5001"
+      STACKS_DIR: "{{.STACKS_DIR}}"
+      DATA_DIR: "{{.TASKFILE_DIR}}/data"
+      AUTH_DISABLED: "true"
+      LOG_LEVEL: "debug"
+    cmds:
+      - go run ./cmd/hivedock
+
+  dev:web:
+    desc: "Run the vite dev server (proxies /api to :5001)"
+    dir: web
+    cmds:
+      - npm run dev
+
+  build:
+    desc: "Full production build: frontend + embedded Go binary via Docker"
+    cmds:
+      - docker build -t {{.IMAGE}} --build-arg VERSION={{.VERSION | default "dev"}} .
+
+  build:local:
+    desc: "Build frontend + Go binary on the host (needs Go + Node)"
+    cmds:
+      - cd web && npm run build
+      - go build -o hivedock ./cmd/hivedock
+
+  test:
+    desc: "Run Go + web unit tests"
+    cmds:
+      - go test ./...
+      - cd web && npm test
+
+  test:integration:
+    desc: "Run daemon-backed integration tests (needs local Docker)"
+    cmds:
+      - go test -tags=integration ./...
+
+  lint:
+    desc: "golangci-lint + eslint"
+    cmds:
+      - golangci-lint run ./...
+      - cd web && npm run lint
+
+  fixture:
+    desc: "(Re)create dev sample stacks in ./dev-stacks"
+    cmds:
+      - bash scripts/fixture.sh "{{.TASKFILE_DIR}}/dev-stacks"
+
+  up:
+    desc: "docker compose up against dev fixtures"
+    env:
+      STACKS_DIR: "{{.STACKS_DIR}}"
+      AUTH_DISABLED: "true"
+    cmds:
+      - docker compose up --build -d
+
+  down:
+    desc: "docker compose down"
+    cmds:
+      - docker compose down
+
+  deploy:
+    desc: "Build amd64 image and load+run on PCT 102 (set HIVEDOCK_DEPLOY_HOST)"
+    preconditions:
+      - sh: test -n "${HIVEDOCK_DEPLOY_HOST}"
+        msg: "Set HIVEDOCK_DEPLOY_HOST in .env.local (see docs/DEPLOYMENT.md)"
+    cmds:
+      - docker build --platform linux/amd64 -t {{.IMAGE}} --build-arg VERSION={{.VERSION | default "dev"}} .
+      - docker save {{.IMAGE}} | ssh root@${HIVEDOCK_DEPLOY_HOST} docker load
+      - ssh root@${HIVEDOCK_DEPLOY_HOST} "cd /opt/hivedock && docker compose up -d"
+
+  seed:
+    desc: "Seed the 7 test stacks into /opt/stacks-test on PCT 102"
+    preconditions:
+      - sh: test -n "${HIVEDOCK_DEPLOY_HOST}"
+        msg: "Set HIVEDOCK_DEPLOY_HOST in .env.local (see docs/DEPLOYMENT.md)"
+    cmds:
+      - ssh root@${HIVEDOCK_DEPLOY_HOST} 'bash -s' < deploy/seed-test-stacks.sh

@@ -1,0 +1,24 @@
+# Local/dev compose. Builds the image and runs it against the dev fixtures.
+# For the PCT 102 test deployment see deploy/pct102.compose.yaml.
+services:
+  hivedock:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    image: hivedock:dev
+    container_name: hivedock
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      # STACKS_DIR must resolve to the SAME path inside and outside the
+      # container (compose relative-path resolution). Keep the two sides equal.
+      - STACKS_DIR=${STACKS_DIR:-/opt/stacks}
+      - DATA_DIR=/app/data
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      - ${STACKS_DIR:-/opt/stacks}:${STACKS_DIR:-/opt/stacks}

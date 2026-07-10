@@ -1,0 +1,34 @@
+# Go
+/hivedock
+/hivedock.exe
+*.test
+*.out
+
+# Build output (frontend). Keep the placeholder so `go:embed all:dist` compiles.
+/web/dist/*
+!/web/dist/.gitkeep
+
+# Node
+/web/node_modules/
+
+# Runtime data
+/data/
+*.sqlite
+*.sqlite-*
+*.db
+
+# Dev fixtures (regenerate with `task fixture`)
+/dev-stacks/
+
+# Local env / secrets
+.env.local
+.env
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Test notes (per DEPLOYMENT.md — your call whether to track)
+docs/TESTING-NOTES.md
