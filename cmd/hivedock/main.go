@@ -16,6 +16,7 @@ import (
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
+	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/server"
 	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
@@ -75,7 +76,10 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	watcher := watch.New(cfg.StacksDir, hub, dockerClient, logger)
 	go watcher.Run(ctx)
 
-	handler := server.New(cfg, logger, db, stacksSvc, hub, webui.Dist())
+	host := hoststats.NewSampler(2 * time.Second)
+	go host.Run(ctx)
+
+	handler := server.New(cfg, logger, db, stacksSvc, hub, host, webui.Dist())
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

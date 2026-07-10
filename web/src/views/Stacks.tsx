@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchStacks, type Stack, type Service } from "../api";
 import { DriftBadge, OriginBadge, ServiceDot, StatusDot } from "../components/ui";
+import HostStrip from "../components/HostStrip";
 
 export default function Stacks() {
   const { data, isLoading, isError, error } = useQuery({
@@ -24,7 +25,9 @@ export default function Stacks() {
   const external = stacks.filter((s) => s.origin === "external");
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
+    <div className="space-y-5">
+      <HostStrip />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
       <div>
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
@@ -82,6 +85,7 @@ export default function Stacks() {
             Select a stack to see its containers
           </div>
         )}
+      </div>
       </div>
     </div>
   );

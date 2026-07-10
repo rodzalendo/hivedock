@@ -56,7 +56,17 @@ async function getJSON<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface HostStats {
+  available: boolean;
+  cpuPercent: number;
+  memUsedBytes: number;
+  memTotalBytes: number;
+  numCpu: number;
+  sampledAt?: string;
+}
+
 export const fetchHealth = () => getJSON<Health>("/api/health");
 export const fetchStacks = () => getJSON<Stack[]>("/api/stacks");
 export const fetchStack = (name: string) =>
   getJSON<Stack>(`/api/stacks/${encodeURIComponent(name)}`);
+export const fetchHostStats = () => getJSON<HostStats>("/api/host/stats");

@@ -14,6 +14,7 @@ import (
 
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/events"
+	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
 )
@@ -23,19 +24,20 @@ import (
 var version = "dev"
 
 // New builds the top-level HTTP handler.
-func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, dist fs.FS) http.Handler {
+func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", api.health)
 		r.Get("/ws", api.websocket)
 		r.Get("/stacks", api.listStacks)
 		r.Get("/stacks/{name}", api.getStack)
+		r.Get("/host/stats", api.hostStats)
 	})
 
 	// Everything else is the SPA (client-side routing → index.html fallback).
@@ -50,6 +52,11 @@ type api struct {
 	db     *store.Store
 	stacks *stacks.Manager
 	hub    *events.Hub
+	host   *hoststats.Sampler
+}
+
+func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.host.Snapshot())
 }
 
 type healthResponse struct {

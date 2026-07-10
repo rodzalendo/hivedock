@@ -15,6 +15,15 @@ function mockApi() {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.includes("/api/host/stats")) {
+        return jsonResponse({
+          available: false,
+          cpuPercent: 0,
+          memUsedBytes: 0,
+          memTotalBytes: 0,
+          numCpu: 0,
+        });
+      }
       if (url.includes("/api/stacks")) {
         return jsonResponse([
           {
