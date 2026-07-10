@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/server"
+	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
 	webui "github.com/rogalinski/hivedock/web"
 )
@@ -42,7 +44,27 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	}
 	defer db.Close()
 
-	handler := server.New(cfg, logger, db, webui.Dist())
+	// The Docker client is best-effort at startup: if the daemon is unreachable
+	// (dev without Docker), the server still serves on-disk stacks with unknown
+	// status rather than failing to boot.
+	var dockerClient *docker.Client
+	if dc, err := docker.New(); err != nil {
+		logger.Warn("docker client init failed; running without live state", "err", err)
+	} else {
+		dockerClient = dc
+		defer dockerClient.Close()
+		if err := dockerClient.Ping(context.Background()); err != nil {
+			logger.Warn("docker daemon unreachable at startup", "err", err)
+		}
+	}
+
+	var lister stacks.ContainerLister
+	if dockerClient != nil {
+		lister = dockerClient
+	}
+	stacksSvc := stacks.NewManager(cfg.StacksDir, lister, logger)
+
+	handler := server.New(cfg, logger, db, stacksSvc, webui.Dist())
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,
