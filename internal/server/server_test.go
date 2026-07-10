@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
@@ -20,8 +22,9 @@ func testHandler(t *testing.T, dist fs.FS) http.Handler {
 	cfg := config.Config{Port: "5001", StacksDir: stacksDir, AuthDisabled: true, LogLevel: slog.LevelError}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
+	hub := events.NewHub(50 * time.Millisecond)
 	// db is unused by the routes under test; keep it nil to avoid touching disk.
-	return New(cfg, logger, nil, stacksSvc, dist)
+	return New(cfg, logger, nil, stacksSvc, hub, dist)
 }
 
 func TestHealth(t *testing.T) {

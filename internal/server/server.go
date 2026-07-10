@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rogalinski/hivedock/internal/config"
+	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
 )
@@ -22,13 +23,13 @@ import (
 var version = "dev"
 
 // New builds the top-level HTTP handler.
-func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, dist fs.FS) http.Handler {
+func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub}
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", api.health)
@@ -48,6 +49,7 @@ type api struct {
 	logger *slog.Logger
 	db     *store.Store
 	stacks *stacks.Manager
+	hub    *events.Hub
 }
 
 type healthResponse struct {

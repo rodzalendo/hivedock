@@ -7,8 +7,9 @@ export default function Stacks() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["stacks"],
     queryFn: fetchStacks,
-    // Poll until the WebSocket push path exists (later in Phase 1).
-    refetchInterval: 5_000,
+    // WebSocket push (useLiveUpdates) drives freshness; this slow interval is a
+    // fallback for when the socket is down.
+    refetchInterval: 30_000,
   });
 
   const [selected, setSelected] = useState<string | null>(null);

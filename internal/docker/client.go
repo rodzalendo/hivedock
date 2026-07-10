@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/client"
 )
 
@@ -69,6 +70,12 @@ type Container struct {
 	WorkingDir string // compose project working_dir (absolute)
 	ConfigHash string // compose per-service config hash (drift detection)
 	Oneoff     bool   // compose one-off container (`compose run`); excluded from stack views
+}
+
+// Events streams Docker daemon events (container lifecycle etc.) until ctx is
+// cancelled. Callers use these to know when to recompute the truth model.
+func (c *Client) Events(ctx context.Context) (<-chan events.Message, <-chan error) {
+	return c.cli.Events(ctx, events.ListOptions{})
 }
 
 // ListContainers returns all containers (running and stopped), normalized.

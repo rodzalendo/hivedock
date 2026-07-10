@@ -15,9 +15,11 @@ import (
 
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/docker"
+	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/server"
 	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
+	"github.com/rogalinski/hivedock/internal/watch"
 	webui "github.com/rogalinski/hivedock/web"
 )
 
@@ -64,7 +66,16 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	}
 	stacksSvc := stacks.NewManager(cfg.StacksDir, lister, logger)
 
-	handler := server.New(cfg, logger, db, stacksSvc, webui.Dist())
+	// Event hub + watcher push change notifications to the UI (no polling).
+	hub := events.NewHub(300 * time.Millisecond)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	watcher := watch.New(cfg.StacksDir, hub, dockerClient, logger)
+	go watcher.Run(ctx)
+
+	handler := server.New(cfg, logger, db, stacksSvc, hub, webui.Dist())
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -84,9 +95,6 @@ func run(cfg config.Config, logger *slog.Logger) error {
 			serverErr <- err
 		}
 	}()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	select {
 	case err := <-serverErr:

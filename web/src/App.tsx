@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Home from "./views/Home";
 import Stacks from "./views/Stacks";
+import { useLiveUpdates } from "./useLiveUpdates";
 
 type View = "stacks" | "status";
 
@@ -11,6 +12,7 @@ const nav: { id: View; label: string; icon: string }[] = [
 
 export default function App() {
   const [view, setView] = useState<View>("stacks");
+  useLiveUpdates();
 
   return (
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100">
