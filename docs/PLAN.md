@@ -29,15 +29,23 @@ Exit: container builds < 160 MB, UI loads, health check green — locally **and*
 
 Goal: the UI accurately shows everything that exists. No mutations yet. This phase is where trust is built; do not rush it.
 
-- [ ] Docker client wrapper: list containers with compose labels, group by `com.docker.compose.project`
-- [ ] Stack scanner: walk `STACKS_DIR`, parse compose files (yaml lib, read-only), merge with running state → managed/external/orphaned classification
-- [ ] fsnotify watcher + Docker events subscription → push state changes over WebSocket
-- [ ] Stacks view: list with status summaries; detail with Containers tab (name, image:tag, state, ports)
-- [ ] Drift detection: `docker compose config --hash` vs container `config-hash` labels; drift badge in UI
-- [ ] Log streaming: `docker logs --follow` piped over WS, per-service filter, follow toggle
-- [ ] Host stats endpoint + strip component
+- [x] Docker client wrapper: list containers with compose labels, group by `com.docker.compose.project`
+- [x] Stack scanner: walk `STACKS_DIR`, parse compose files (yaml lib, read-only), merge with running state → managed/external classification (+ standalone `docker run` containers)
+- [x] fsnotify watcher + Docker events subscription → push state changes over WebSocket (debounced hub; 30s rescan fallback; event noise filtered)
+- [x] Stacks view: list with status summaries; detail with Containers tab (name, image:tag, state, ports)
+- [x] Drift detection: `docker compose config --hash` vs container `config-hash` labels; drift badge in UI (mtime-cached)
+- [ ] Log streaming: `docker logs --follow` piped over WS, per-service filter, follow toggle — **only remaining Phase 1 item**
+- [x] Host stats endpoint + strip component (/proc sampler; cgroup-limited view)
 
 Exit (verified on PCT 102 against `/opt/stacks-test`): edit a compose file over SSH → drift badge appears without refresh (fsnotify, or ≤30s via rescan if inotify doesn't propagate through the LXC bind mounts — see DEPLOYMENT.md); `docker compose up` a new stack via SSH → it appears in UI within seconds; a plain `docker run` container shows as external/read-only.
+
+> Progress note: read-only truth, real-time WS push, drift detection, and host
+> stats are done and verified locally against a live daemon (incl. correctly
+> showing the user's other `eduplan` project as external/read-only). Docker
+> Desktop / Windows bind mounts don't deliver inotify (same class as the LXC
+> double-bind caveat) — the 30s rescan covers it; the fs-watch code is proven by
+> test on a native fs. Only **log streaming** remains before the PCT 102 exit
+> verification.
 
 ## Phase 2 — Homepage (2–3 sessions)
 
