@@ -130,6 +130,7 @@ export interface HomeEntry {
   service: string;
   name: string;
   group: string;
+  explicitGroup?: boolean; // group came from a compose label, not the stack-name fallback
   url?: string;
   ports?: PortLink[];
   iconSlug?: string;
@@ -147,8 +148,9 @@ export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
 export interface HomeLayout {
   columns?: number; // group columns on wide screens (1-4)
   sort?: "name" | "status";
-  groupOrder?: string[]; // original group keys, in display order
-  groupTitles?: Record<string, string>; // original key -> custom title
+  groups?: string[]; // user-created group names
+  cardGroups?: Record<string, string>; // "stack/service" -> group name ("" = default)
+  groupOrder?: string[]; // group names in display order
 }
 
 export async function fetchHomeLayout(): Promise<HomeLayout> {

@@ -23,6 +23,10 @@ type Entry struct {
 	Service     string     `json:"service"`
 	Name        string     `json:"name"`
 	Group       string     `json:"group"`
+	// ExplicitGroup marks a group that came from a hivedock.group/homepage.group
+	// label (vs. the stack-name fallback). The dashboard only honors explicit
+	// groups by default; derived ones collapse into its default group.
+	ExplicitGroup bool `json:"explicitGroup,omitempty"`
 	URL         string     `json:"url,omitempty"`
 	Ports       []PortLink `json:"ports,omitempty"`
 	IconSlug    string     `json:"iconSlug,omitempty"` // normalized image slug (icon matcher resolves it)
@@ -84,6 +88,7 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 	}
 
 	group := firstLabel(l, "hivedock.group", "homepage.group")
+	explicitGroup := group != ""
 	if group == "" {
 		group = humanize(st.Name)
 	}
@@ -103,10 +108,11 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 	}
 
 	e := Entry{
-		Stack:       st.Name,
-		Service:     svc.Name,
-		Name:        name,
-		Group:       group,
+		Stack:         st.Name,
+		Service:       svc.Name,
+		Name:          name,
+		Group:         group,
+		ExplicitGroup: explicitGroup,
 		URL:         url,
 		Ports:       ports,
 		Icon:        icon,

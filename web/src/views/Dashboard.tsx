@@ -13,6 +13,12 @@ import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
 import { EyeIcon, EyeOffIcon, ImageIcon } from "../components/icons";
 
+// The pool every card lives in unless the user (or a compose label) says
+// otherwise. Stack names never create groups on their own.
+const DEFAULT_GROUP = "Apps";
+
+const keyOf = (e: HomeEntry) => `${e.stack}/${e.service}`;
+
 // Group columns on wider screens; small screens always stack to one column.
 const columnsClass: Record<number, string> = {
   1: "columns-1",
@@ -27,6 +33,20 @@ function statusRank(status: string): number {
   if (status === "running") return 0;
   if (status === "absent") return 2;
   return 1;
+}
+
+// groupFor resolves which group a card belongs to: the user's assignment
+// wins, then an explicit compose-label group, then the default pool.
+function groupFor(e: HomeEntry, layout: HomeLayout): string {
+  const assigned = layout.cardGroups?.[keyOf(e)];
+  if (assigned !== undefined) {
+    if (assigned === "") return DEFAULT_GROUP;
+    if ((layout.groups ?? []).includes(assigned) || assigned === e.group) {
+      return assigned;
+    }
+  }
+  if (e.explicitGroup && e.group) return e.group;
+  return DEFAULT_GROUP;
 }
 
 export default function Dashboard() {
@@ -49,7 +69,11 @@ export default function Dashboard() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<HomeLayout>({});
   const [saving, setSaving] = useState(false);
-  const layout: HomeLayout = editing ? draft : (savedLayout ?? {});
+  const [newGroup, setNewGroup] = useState("");
+  const layout: HomeLayout = useMemo(
+    () => (editing ? draft : (savedLayout ?? {})),
+    [editing, draft, savedLayout],
+  );
   const columns = Math.min(4, Math.max(1, layout.columns ?? 3));
 
   const entries = useMemo(() => data ?? [], [data]);
@@ -66,13 +90,20 @@ export default function Dashboard() {
     });
   }, [entries, search, showHidden]);
 
-  // Group, sort within groups, then order the groups per the layout.
+  // Bucket cards into groups, sort within each, order the groups.
   const groups = useMemo(() => {
     const map = new Map<string, HomeEntry[]>();
+    // While editing, user groups render even when empty so cards can be
+    // assigned into them.
+    if (editing) {
+      map.set(DEFAULT_GROUP, []);
+      for (const g of layout.groups ?? []) map.set(g, []);
+    }
     for (const e of filtered) {
-      const arr = map.get(e.group) ?? [];
+      const g = groupFor(e, layout);
+      const arr = map.get(g) ?? [];
       arr.push(e);
-      map.set(e.group, arr);
+      map.set(g, arr);
     }
     const bySort =
       layout.sort === "status"
@@ -89,22 +120,25 @@ export default function Dashboard() {
       if (ia >= 0 && ib >= 0) return ia - ib;
       if (ia >= 0) return -1;
       if (ib >= 0) return 1;
+      if (a === DEFAULT_GROUP) return -1;
+      if (b === DEFAULT_GROUP) return 1;
       return a.localeCompare(b);
     });
     return keys.map((k) => [k, map.get(k)!] as const);
-  }, [filtered, layout.sort, layout.groupOrder]);
+  }, [filtered, layout, editing]);
 
   const hiddenCount = entries.filter((e) => e.hidden).length;
+  const userGroups = layout.groups ?? [];
 
   function startEdit() {
     setDraft({
       columns,
-      sort: layout.sort ?? "name",
-      groupTitles: { ...(savedLayout?.groupTitles ?? {}) },
-      // Seed the order with what's currently displayed so dragging starts
-      // from a complete list.
+      sort: savedLayout?.sort ?? "name",
+      groups: [...(savedLayout?.groups ?? [])],
+      cardGroups: { ...(savedLayout?.cardGroups ?? {}) },
       groupOrder: groups.map(([k]) => k),
     });
+    setNewGroup("");
     setEditing(true);
   }
 
@@ -117,6 +151,62 @@ export default function Dashboard() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function addGroup() {
+    const name = newGroup.trim();
+    if (!name || name === DEFAULT_GROUP) return;
+    setDraft((d) => {
+      if ((d.groups ?? []).includes(name)) return d;
+      return {
+        ...d,
+        groups: [...(d.groups ?? []), name],
+        groupOrder: [...(d.groupOrder ?? []), name],
+      };
+    });
+    setNewGroup("");
+  }
+
+  // renameGroup remaps every reference to the old name (commits on blur).
+  function renameGroup(from: string, to: string) {
+    const next = to.trim();
+    if (!next || next === from || next === DEFAULT_GROUP) return;
+    setDraft((d) => {
+      if ((d.groups ?? []).includes(next)) return d; // avoid collisions
+      const cardGroups: Record<string, string> = {};
+      for (const [k, v] of Object.entries(d.cardGroups ?? {})) {
+        cardGroups[k] = v === from ? next : v;
+      }
+      return {
+        ...d,
+        groups: (d.groups ?? []).map((g) => (g === from ? next : g)),
+        groupOrder: (d.groupOrder ?? []).map((g) => (g === from ? next : g)),
+        cardGroups,
+      };
+    });
+  }
+
+  // deleteGroup sends its cards back to the default pool.
+  function deleteGroup(name: string) {
+    setDraft((d) => {
+      const cardGroups: Record<string, string> = {};
+      for (const [k, v] of Object.entries(d.cardGroups ?? {})) {
+        if (v !== name) cardGroups[k] = v;
+      }
+      return {
+        ...d,
+        groups: (d.groups ?? []).filter((g) => g !== name),
+        groupOrder: (d.groupOrder ?? []).filter((g) => g !== name),
+        cardGroups,
+      };
+    });
+  }
+
+  function assignCard(cardKey: string, group: string) {
+    setDraft((d) => ({
+      ...d,
+      cardGroups: { ...(d.cardGroups ?? {}), [cardKey]: group },
+    }));
   }
 
   // HTML5 drag-and-drop group reordering (edit mode only).
@@ -163,6 +253,27 @@ export default function Dashboard() {
 
         {editing ? (
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                addGroup();
+              }}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                value={newGroup}
+                onChange={(e) => setNewGroup(e.target.value)}
+                placeholder="New group name…"
+                className="w-36 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200 placeholder-zinc-600 outline-none focus:border-accent-500"
+              />
+              <button
+                type="submit"
+                disabled={!newGroup.trim()}
+                className="rounded-lg border border-zinc-700 px-2 py-1 text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-40"
+              >
+                + Add group
+              </button>
+            </form>
             <label className="flex items-center gap-1.5 text-zinc-400">
               Columns
               <select
@@ -214,7 +325,7 @@ export default function Dashboard() {
           <button
             onClick={startEdit}
             className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-800"
-            title="Arrange groups: columns, order (drag & drop), titles, sorting"
+            title="Create groups, assign apps to them, arrange columns and order"
           >
             Customize
           </button>
@@ -223,8 +334,8 @@ export default function Dashboard() {
 
       {editing && (
         <p className="text-xs text-zinc-500">
-          Drag groups to reorder them, click a title to rename it, then Save
-          layout.
+          Create groups, then use the dropdown on each card to assign it. Drag
+          a group to reorder, rename it inline, and Save layout when done.
         </p>
       )}
 
@@ -261,29 +372,36 @@ export default function Dashboard() {
                     ⠿
                   </span>
                 )}
-                {editing ? (
-                  <input
-                    value={draft.groupTitles?.[key] ?? key}
-                    onChange={(e) =>
-                      setDraft((d) => ({
-                        ...d,
-                        groupTitles: {
-                          ...(d.groupTitles ?? {}),
-                          [key]: e.target.value,
-                        },
-                      }))
-                    }
-                    className="w-40 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-300 outline-none focus:border-accent-500"
-                  />
+                {editing && userGroups.includes(key) ? (
+                  <>
+                    <GroupTitle name={key} onRename={(next) => renameGroup(key, next)} />
+                    <button
+                      onClick={() => deleteGroup(key)}
+                      title="Delete this group (its apps go back to Apps)"
+                      className="rounded px-1 text-zinc-600 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
+                  </>
                 ) : (
                   <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                    {layout.groupTitles?.[key]?.trim() || key}
+                    {key}
                   </h3>
+                )}
+                {editing && items.length === 0 && (
+                  <span className="text-[10px] text-zinc-600">(empty)</span>
                 )}
               </div>
               <div className="space-y-2">
                 {items.map((e) => (
-                  <Card key={`${e.stack}/${e.service}`} entry={e} />
+                  <Card
+                    key={keyOf(e)}
+                    entry={e}
+                    editing={editing}
+                    groupOptions={userGroups}
+                    assignedGroup={groupFor(e, layout)}
+                    onAssign={(g) => assignCard(keyOf(e), g === DEFAULT_GROUP ? "" : g)}
+                  />
                 ))}
               </div>
             </section>
@@ -294,7 +412,42 @@ export default function Dashboard() {
   );
 }
 
-function Card({ entry }: { entry: HomeEntry }) {
+// GroupTitle is an inline rename input that commits on blur or Enter.
+function GroupTitle({
+  name,
+  onRename,
+}: {
+  name: string;
+  onRename: (next: string) => void;
+}) {
+  const [value, setValue] = useState(name);
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => onRename(value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setValue(name);
+      }}
+      className="w-36 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-300 outline-none focus:border-accent-500"
+    />
+  );
+}
+
+function Card({
+  entry,
+  editing,
+  groupOptions,
+  assignedGroup,
+  onAssign,
+}: {
+  entry: HomeEntry;
+  editing?: boolean;
+  groupOptions?: string[];
+  assignedGroup?: string;
+  onAssign?: (group: string) => void;
+}) {
   const qc = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleHidden = useMutation({
@@ -302,7 +455,7 @@ function Card({ entry }: { entry: HomeEntry }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["home"] }),
   });
 
-  const clickable = !!entry.url;
+  const clickable = !!entry.url && !editing;
   const inner = (
     <>
       <AppIcon entry={entry} />
@@ -317,6 +470,13 @@ function Card({ entry }: { entry: HomeEntry }) {
       </div>
     </>
   );
+
+  // Options for the assign dropdown: the default pool, user groups, and (when
+  // present) the card's own compose-label group.
+  const options = [DEFAULT_GROUP, ...(groupOptions ?? [])];
+  if (entry.explicitGroup && entry.group && !options.includes(entry.group)) {
+    options.push(entry.group);
+  }
 
   return (
     <div
@@ -337,48 +497,63 @@ function Card({ entry }: { entry: HomeEntry }) {
         <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
       )}
 
-      <div className="flex shrink-0 items-center gap-1">
-        {entry.ports && entry.ports.length > 1 && (
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-              title="Ports"
-            >
-              ⋯
-            </button>
-            {menuOpen && (
-              <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-                {entry.ports.map((p) => (
-                  <a
-                    key={p.label}
-                    href={p.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                  >
-                    {p.label}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        <IconEditor entry={entry} />
-        <button
-          onClick={() => toggleHidden.mutate()}
-          className={`rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300 ${
-            entry.hidden ? "" : "opacity-0 group-hover:opacity-100"
-          }`}
-          title={entry.hidden ? "Show on dashboard" : "Hide from dashboard"}
+      {editing ? (
+        <select
+          value={assignedGroup}
+          onChange={(e) => onAssign?.(e.target.value)}
+          title="Move this app to a group"
+          className="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-xs text-zinc-200"
         >
-          {entry.hidden ? (
-            <EyeOffIcon className="h-4 w-4" />
-          ) : (
-            <EyeIcon className="h-4 w-4" />
+          {options.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <div className="flex shrink-0 items-center gap-1">
+          {entry.ports && entry.ports.length > 1 && (
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                title="Ports"
+              >
+                ⋯
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+                  {entry.ports.map((p) => (
+                    <a
+                      key={p.label}
+                      href={p.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                    >
+                      {p.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-        </button>
-      </div>
+          <IconEditor entry={entry} />
+          <button
+            onClick={() => toggleHidden.mutate()}
+            className={`rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300 ${
+              entry.hidden ? "" : "opacity-0 group-hover:opacity-100"
+            }`}
+            title={entry.hidden ? "Show on dashboard" : "Hide from dashboard"}
+          >
+            {entry.hidden ? (
+              <EyeOffIcon className="h-4 w-4" />
+            ) : (
+              <EyeIcon className="h-4 w-4" />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
