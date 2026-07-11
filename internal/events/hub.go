@@ -71,6 +71,13 @@ func (h *Hub) broadcast(msg Message) {
 	}
 }
 
+// Publish broadcasts a message to all subscribers immediately (no debouncing).
+// Used for ordered, real-time streams like deploy:* output where every line
+// matters and coalescing would drop content.
+func (h *Hub) Publish(msg Message) {
+	h.broadcast(msg)
+}
+
 // NotifyChanged schedules a coalesced broadcast of a change event. Multiple
 // calls with the same reason within the debounce window collapse into one.
 func (h *Hub) NotifyChanged(reason string) {

@@ -36,6 +36,18 @@ export function useLiveUpdates() {
         }
         if (msg.type === "stacks:changed") {
           void qc.invalidateQueries({ queryKey: ["stacks"] });
+        } else if (msg.type.startsWith("deploy:")) {
+          // Fan deploy output out to the console component via a DOM event so we
+          // keep a single shared socket. On completion, refetch the truth model.
+          window.dispatchEvent(
+            new CustomEvent("hivedock:deploy", { detail: msg }),
+          );
+          if (msg.type === "deploy:end") {
+            void qc.invalidateQueries({ queryKey: ["stacks"] });
+          }
+        } else if (msg.type === "updates:changed") {
+          void qc.invalidateQueries({ queryKey: ["updates"] });
+          window.dispatchEvent(new CustomEvent("hivedock:updates"));
         }
       };
       ws.onclose = () => {

@@ -3,46 +3,87 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/rogalinski/hivedock/internal/compose"
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
 	"github.com/rogalinski/hivedock/internal/hoststats"
+	"github.com/rogalinski/hivedock/internal/registry"
 	"github.com/rogalinski/hivedock/internal/stacks"
 	"github.com/rogalinski/hivedock/internal/store"
+	"github.com/rogalinski/hivedock/internal/updates"
 )
 
 // version is the build-time version string; overridden via -ldflags in the
 // Dockerfile. "dev" for local builds.
 var version = "dev"
 
-// New builds the top-level HTTP handler.
-func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
+// New builds the top-level HTTP handler. ctx bounds background loops (the
+// periodic update scheduler); cancel it to stop them.
+func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons}
+	// The update checker uses the Docker client (nil-safe) for local image
+	// digests + changelog source labels on the mutable-tag path.
+	var local updates.LocalImages
+	if dockerClient != nil {
+		local = dockerClient
+	}
+	checker := updates.NewChecker(registry.NewClient(nil), local, logger)
+
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker}
+
+	// Periodic background update checks (env CHECK_INTERVAL; 0 disables).
+	api.startUpdateScheduler(ctx, cfg.CheckInterval)
 
 	r.Route("/api", func(r chi.Router) {
+		// Public: liveness + the auth bootstrap (status/setup/login).
 		r.Get("/health", api.health)
-		r.Get("/ws", api.websocket)
-		r.Get("/stacks", api.listStacks)
-		r.Get("/stacks/{name}", api.getStack)
-		r.Get("/host/stats", api.hostStats)
-		r.Get("/home", api.listHome)
-		r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
-		r.Get("/icons/{slug}", api.icon)
+		r.Route("/auth", func(r chi.Router) {
+			r.Get("/status", api.authStatus)
+			r.Post("/setup", api.authSetup)
+			r.Post("/login", api.authLogin)
+			r.With(api.requireAuth).Post("/logout", api.authLogout)
+		})
+
+		// Everything else requires a session (bypassed by AUTH_DISABLED).
+		r.Group(func(r chi.Router) {
+			r.Use(api.requireAuth)
+			r.Get("/ws", api.websocket)
+			r.Get("/stacks", api.listStacks)
+			r.Post("/stacks", api.createStack)
+			r.Get("/stacks/{name}", api.getStack)
+			r.Post("/stacks/{name}/actions/{action}", api.runStackAction)
+			r.Post("/stacks/{name}/services/{service}/update", api.updateService)
+			r.Get("/stacks/{name}/compose", api.getCompose)
+			r.Put("/stacks/{name}/compose", api.putCompose)
+			r.Post("/stacks/{name}/compose/validate", api.validateCompose)
+			r.Get("/stacks/{name}/env", api.getEnv)
+			r.Put("/stacks/{name}/env", api.putEnv)
+			r.Get("/host/stats", api.hostStats)
+			r.Get("/settings", api.settings)
+			r.Put("/settings", api.updateSettings)
+			r.Get("/updates", api.listUpdates)
+			r.Post("/updates/check", api.checkUpdates)
+			r.Get("/home", api.listHome)
+			r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
+			r.Get("/icons/{slug}", api.icon)
+		})
 	})
 
 	// Everything else is the SPA (client-side routing → index.html fallback).
@@ -52,14 +93,18 @@ func New(cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *sta
 }
 
 type api struct {
-	cfg    config.Config
-	logger *slog.Logger
-	db     *store.Store
-	stacks *stacks.Manager
-	hub    *events.Hub
-	host   *hoststats.Sampler
-	docker *docker.Client // may be nil (no daemon)
-	icons  *discovery.IconResolver
+	cfg     config.Config
+	logger  *slog.Logger
+	db      *store.Store
+	stacks  *stacks.Manager
+	hub     *events.Hub
+	host    *hoststats.Sampler
+	docker  *docker.Client // may be nil (no daemon)
+	icons   *discovery.IconResolver
+	runner  *compose.Runner
+	checker *updates.Checker
+
+	checking atomic.Bool // guards against concurrent update-check runs
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {

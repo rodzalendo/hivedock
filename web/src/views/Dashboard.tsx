@@ -13,7 +13,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [showHidden, setShowHidden] = useState(false);
 
-  const entries = data ?? [];
+  const entries = useMemo(() => data ?? [], [data]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return entries.filter((e) => {

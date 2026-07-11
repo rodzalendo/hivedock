@@ -81,12 +81,12 @@ func TestScanMissingDir(t *testing.T) {
 
 func TestNormalizeProject(t *testing.T) {
 	cases := map[string]string{
-		"whoami":      "whoami",
-		"My App":      "myapp",
-		"redis-app":   "redis-app",
-		"App_1":       "app_1",
-		"Foo.Bar":     "foobar",
-		"UPPER":       "upper",
+		"whoami":    "whoami",
+		"My App":    "myapp",
+		"redis-app": "redis-app",
+		"App_1":     "app_1",
+		"Foo.Bar":   "foobar",
+		"UPPER":     "upper",
 	}
 	for in, want := range cases {
 		if got := NormalizeProject(in); got != want {

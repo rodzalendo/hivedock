@@ -57,6 +57,16 @@ function mockApi() {
           },
         ]);
       }
+      if (url.includes("/api/updates")) {
+        return jsonResponse([]);
+      }
+      if (url.includes("/api/auth/status")) {
+        return jsonResponse({
+          authDisabled: true,
+          needsSetup: false,
+          authenticated: true,
+        });
+      }
       if (url.includes("/api/health")) {
         return jsonResponse({
           status: "ok",

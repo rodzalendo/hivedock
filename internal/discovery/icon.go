@@ -16,15 +16,15 @@ import (
 // match the dashboard-icons name. Matching a manifest/alias table (not blind URL
 // construction) is required — names are irregular (docs/ARCHITECTURE.md §3.4).
 var iconAliases = map[string]string{
-	"ubuntu":         "ubuntu-linux",
-	"postgres":       "postgresql",
-	"mongo":          "mongodb",
-	"whoami":         "traefik",
-	"pihole":         "pi-hole",
-	"homeassistant":  "home-assistant",
-	"linuxserver":    "linuxserver-io",
-	"vaultwarden":    "vaultwarden",
-	"adguardhome":    "adguard-home",
+	"ubuntu":        "ubuntu-linux",
+	"postgres":      "postgresql",
+	"mongo":         "mongodb",
+	"whoami":        "traefik",
+	"pihole":        "pi-hole",
+	"homeassistant": "home-assistant",
+	"linuxserver":   "linuxserver-io",
+	"vaultwarden":   "vaultwarden",
+	"adguardhome":   "adguard-home",
 }
 
 // FetchFunc retrieves an icon by URL. Returns the bytes, content type, and

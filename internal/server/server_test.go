@@ -31,7 +31,7 @@ func testHandler(t *testing.T, dist fs.FS) http.Handler {
 		return nil, "", false
 	})
 	// db and docker are unused by the routes under test; keep them nil.
-	return New(cfg, logger, nil, stacksSvc, hub, host, nil, icons, dist)
+	return New(context.Background(), cfg, logger, nil, stacksSvc, hub, host, nil, icons, dist)
 }
 
 func TestHealth(t *testing.T) {

@@ -41,19 +41,60 @@ export interface Stack {
   services: Service[];
 }
 
+// A 401 from any request means the session lapsed (or never existed): notify the
+// auth gate so it re-checks and drops back to the login screen.
+function onUnauthorized() {
+  window.dispatchEvent(new Event("hivedock:unauthorized"));
+}
+
+async function errorMessage(res: Response): Promise<string> {
+  let msg = `${res.status} ${res.statusText}`;
+  try {
+    const body = (await res.json()) as { error?: string };
+    if (body.error) msg = body.error;
+  } catch {
+    /* non-JSON error body */
+  }
+  return msg;
+}
+
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) msg = body.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(msg);
+    if (res.status === 401) onUnauthorized();
+    throw new Error(await errorMessage(res));
   }
   return (await res.json()) as T;
+}
+
+// csrfToken reads the (non-HttpOnly) CSRF cookie the server set at login; it is
+// echoed back in the X-CSRF-Token header on every state-changing request
+// (double-submit-cookie CSRF defense).
+function csrfToken(): string {
+  const m = document.cookie.match(/(?:^|;\s*)hivedock_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+// mutate issues a state-changing request with the CSRF header attached, and maps
+// error responses to thrown Errors.
+async function mutate(
+  url: string,
+  method: "POST" | "PUT" | "DELETE",
+  body?: unknown,
+): Promise<Response> {
+  const res = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": csrfToken(),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized();
+    throw new Error(await errorMessage(res));
+  }
+  return res;
 }
 
 export interface HostStats {
@@ -91,15 +132,219 @@ export async function setServiceVisibility(
   service: string,
   hidden: boolean,
 ): Promise<void> {
-  const res = await fetch(
+  await mutate(
     `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/visibility`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hidden }),
-    },
+    "PUT",
+    { hidden },
   );
-  if (!res.ok) throw new Error(`failed to update visibility: ${res.status}`);
+}
+
+// ---- Auth ----
+
+export interface AuthStatus {
+  authDisabled: boolean;
+  needsSetup: boolean;
+  authenticated: boolean;
+  username?: string;
+}
+
+export const fetchAuthStatus = () => getJSON<AuthStatus>("/api/auth/status");
+
+export async function setupAdmin(
+  username: string,
+  password: string,
+): Promise<void> {
+  await mutate("/api/auth/setup", "POST", { username, password });
+}
+
+export async function login(
+  username: string,
+  password: string,
+): Promise<void> {
+  await mutate("/api/auth/login", "POST", { username, password });
+}
+
+export async function logout(): Promise<void> {
+  await mutate("/api/auth/logout", "POST");
+}
+
+// ---- Stack mutations ----
+
+export type StackAction = "up" | "down" | "restart" | "pull" | "stop";
+
+export interface DeployAck {
+  id: string;
+  stack: string;
+  action: StackAction;
+}
+
+// runStackAction triggers a compose lifecycle operation. It returns as soon as
+// the operation is accepted (202); the streamed output arrives over the
+// WebSocket as deploy:* messages (see useLiveUpdates → hivedock:deploy events).
+export async function runStackAction(
+  name: string,
+  action: StackAction,
+): Promise<DeployAck> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(name)}/actions/${action}`,
+    "POST",
+  );
+  return (await res.json()) as DeployAck;
+}
+
+// ---- Stack creation ----
+
+export interface CreatedStack {
+  name: string;
+  dir: string;
+  composeFile: string;
+}
+
+// createStack scaffolds a new managed stack (directory + template compose.yaml).
+// It does not deploy — the caller edits on the Compose tab, then deploys.
+export async function createStack(name: string): Promise<CreatedStack> {
+  const res = await mutate("/api/stacks", "POST", { name });
+  return (await res.json()) as CreatedStack;
+}
+
+// ---- Compose file editing ----
+
+export interface ComposeFile {
+  path: string;
+  content: string;
+}
+
+export interface ValidateResult {
+  valid: boolean;
+  error?: string;
+}
+
+export const fetchCompose = (name: string) =>
+  getJSON<ComposeFile>(`/api/stacks/${encodeURIComponent(name)}/compose`);
+
+// validateCompose asks the server to run `docker compose config` on the draft
+// without saving it. Always resolves (valid true/false); rejects only on a
+// transport/auth error.
+export async function validateCompose(
+  name: string,
+  content: string,
+): Promise<ValidateResult> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(name)}/compose/validate`,
+    "POST",
+    { content },
+  );
+  return (await res.json()) as ValidateResult;
+}
+
+// saveCompose validates server-side then writes the file (save ≠ deploy). A
+// 422 (invalid compose) surfaces as a thrown Error carrying compose's message.
+export async function saveCompose(
+  name: string,
+  content: string,
+): Promise<ComposeFile> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(name)}/compose`,
+    "PUT",
+    { content },
+  );
+  return (await res.json()) as ComposeFile;
+}
+
+// ---- Updates ----
+
+export interface UpdateUsage {
+  stack: string;
+  service: string;
+}
+
+export type UpdateKind =
+  | "unchecked"
+  | "semver"
+  | "digest"
+  | "uptodate"
+  | "error"
+  | "unsupported";
+
+export interface UpdateEntry {
+  image: string;
+  kind: UpdateKind;
+  hasUpdate: boolean;
+  current?: string;
+  candidate?: string;
+  diff?: "major" | "minor" | "patch";
+  currentDigest?: string;
+  latestDigest?: string;
+  source?: string;
+  error?: string;
+  checkedAt?: string;
+  usedBy: UpdateUsage[];
+}
+
+export const fetchUpdates = () => getJSON<UpdateEntry[]>("/api/updates");
+
+// updateService rewrites a service's image tag in its compose file (comment-
+// preserving). Save ≠ deploy — deploy the stack separately to apply.
+export async function updateService(
+  stack: string,
+  service: string,
+  tag: string,
+): Promise<void> {
+  await mutate(
+    `/api/stacks/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/update`,
+    "POST",
+    { tag },
+  );
+}
+
+// checkUpdates triggers a registry check across all managed-stack images. The
+// results arrive asynchronously (updates:changed over the WebSocket). Returns
+// the number of images queued; a 409 means a check is already running.
+export async function checkUpdates(): Promise<{ images: number }> {
+  const res = await mutate("/api/updates/check", "POST");
+  return (await res.json()) as { images: number };
+}
+
+// ---- .env editing ----
+
+export interface EnvFile {
+  path: string;
+  content: string;
+  exists: boolean;
+}
+
+export const fetchEnv = (name: string) =>
+  getJSON<EnvFile>(`/api/stacks/${encodeURIComponent(name)}/env`);
+
+// saveEnv writes the stack's .env (creating it if needed). Save ≠ deploy — the
+// change applies on the next deploy.
+export async function saveEnv(name: string, content: string): Promise<EnvFile> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(name)}/env`,
+    "PUT",
+    { content },
+  );
+  return (await res.json()) as EnvFile;
+}
+
+// ---- Settings ----
+
+export interface Settings {
+  stacksDir: string;
+  dataDir: string;
+  checkInterval: string;
+  webhookUrl: string;
+  webhookFromEnv: boolean;
+  publicHost: string;
+  authDisabled: boolean;
+  version: string;
+}
+
+export const fetchSettings = () => getJSON<Settings>("/api/settings");
+
+export async function saveSettings(webhookUrl: string): Promise<Settings> {
+  const res = await mutate("/api/settings", "PUT", { webhookUrl });
+  return (await res.json()) as Settings;
 }
 
 export const fetchHealth = () => getJSON<Health>("/api/health");

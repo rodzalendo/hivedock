@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config holds all runtime configuration. See docs/CLAUDE.md for the invariants
@@ -20,6 +21,9 @@ type Config struct {
 	AuthDisabled bool       // AUTH_DISABLED — bypass auth (LAN test envs only)
 	PublicHost   string     // PUBLIC_HOST — host:port used to build homepage URLs (default: request Host)
 	LogLevel     slog.Level // LOG_LEVEL — debug|info|warn|error
+
+	CheckInterval time.Duration // CHECK_INTERVAL — periodic update check cadence (0 disables)
+	WebhookURL    string        // WEBHOOK_URL — POSTed a JSON payload when new updates are found
 }
 
 // Load reads configuration from the environment, applying defaults suitable for
@@ -32,7 +36,26 @@ func Load() Config {
 		AuthDisabled: envBool("AUTH_DISABLED", false),
 		PublicHost:   env("PUBLIC_HOST", ""),
 		LogLevel:     logLevel(env("LOG_LEVEL", "info")),
+
+		CheckInterval: envDuration("CHECK_INTERVAL", 6*time.Hour),
+		WebhookURL:    env("WEBHOOK_URL", ""),
 	}
+}
+
+// envDuration parses a Go duration (e.g. "6h", "30m"); "0"/"off" disables.
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	if strings.EqualFold(v, "off") {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func env(key, fallback string) string {

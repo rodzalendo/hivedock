@@ -106,6 +106,53 @@ func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, follow 
 	return rc, tty, nil
 }
 
+// ImageRepoDigest returns the local image's registry manifest digest
+// ("sha256:…") for imageRef, from its RepoDigests. This is what the registry's
+// Docker-Content-Digest is compared against for the mutable-tag update path.
+// Returns "" (no error) when the image has no repo digest (e.g. locally built).
+func (c *Client) ImageRepoDigest(ctx context.Context, imageRef string) (string, error) {
+	inspect, _, err := c.cli.ImageInspectWithRaw(ctx, imageRef)
+	if err != nil {
+		return "", fmt.Errorf("inspect image %q: %w", imageRef, err)
+	}
+	// Prefer a RepoDigest whose repository matches the reference; otherwise take
+	// the first. An image can carry digests for several repos (retags).
+	repo := imageRef
+	if i := strings.LastIndex(repo, ":"); i >= 0 && !strings.Contains(repo[i+1:], "/") {
+		repo = repo[:i]
+	}
+	first := ""
+	for _, rd := range inspect.RepoDigests {
+		at := strings.LastIndex(rd, "@")
+		if at < 0 {
+			continue
+		}
+		if first == "" {
+			first = rd[at+1:]
+		}
+		if strings.HasPrefix(rd, repo+"@") {
+			return rd[at+1:], nil
+		}
+	}
+	return first, nil
+}
+
+// ImageSource returns the image's org.opencontainers.image.source label (the
+// upstream repo URL, used for a changelog link), or "" if absent. Best-effort:
+// requires the image to be present locally.
+func (c *Client) ImageSource(ctx context.Context, imageRef string) (string, error) {
+	inspect, _, err := c.cli.ImageInspectWithRaw(ctx, imageRef)
+	if err != nil {
+		return "", fmt.Errorf("inspect image %q: %w", imageRef, err)
+	}
+	if inspect.Config != nil {
+		if s := inspect.Config.Labels["org.opencontainers.image.source"]; s != "" {
+			return s, nil
+		}
+	}
+	return "", nil
+}
+
 // ListContainers returns all containers (running and stopped), normalized.
 func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 	list, err := c.cli.ContainerList(ctx, container.ListOptions{All: true})

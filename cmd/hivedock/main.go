@@ -82,7 +82,7 @@ func run(cfg config.Config, logger *slog.Logger) error {
 
 	icons := discovery.NewIconResolver(cfg.DataDir, nil)
 
-	handler := server.New(cfg, logger, db, stacksSvc, hub, host, dockerClient, icons, webui.Dist())
+	handler := server.New(ctx, cfg, logger, db, stacksSvc, hub, host, dockerClient, icons, webui.Dist())
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -22,11 +22,11 @@ var composeFilenames = []string{
 
 // ScannedStack is a stack as defined on disk (before merging with runtime state).
 type ScannedStack struct {
-	Name        string                  // directory base name
-	Dir         string                  // absolute directory path
-	ComposeFile string                  // absolute path to the compose file
-	Project     string                  // compose project name (explicit `name:` or normalized dir)
-	Services    map[string]ScannedSvc   // service name -> definition
+	Name        string                // directory base name
+	Dir         string                // absolute directory path
+	ComposeFile string                // absolute path to the compose file
+	Project     string                // compose project name (explicit `name:` or normalized dir)
+	Services    map[string]ScannedSvc // service name -> definition
 }
 
 // ScannedSvc is the subset of a compose service Hivedock reads. Read-only: we
@@ -43,8 +43,8 @@ type composeDoc struct {
 }
 
 type composeService struct {
-	Image  string            `yaml:"image"`
-	Labels composeLabels     `yaml:"labels"`
+	Image  string        `yaml:"image"`
+	Labels composeLabels `yaml:"labels"`
 }
 
 // Scan walks stacksDir one level deep and parses every directory that contains
