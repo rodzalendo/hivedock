@@ -34,6 +34,7 @@ type updateEntry struct {
 	Source        string  `json:"source,omitempty"`
 	Error         string  `json:"error,omitempty"`
 	CheckedAt     string  `json:"checkedAt,omitempty"`
+	Ignored       bool    `json:"ignored,omitempty"` // user chose to keep the pinned version
 	UsedBy        []usage `json:"usedBy"`
 }
 
@@ -48,11 +49,17 @@ func (a *api) listUpdates(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cache := map[string]updates.Result{}
+	ignored := map[string]bool{}
 	if a.db != nil {
 		if c, err := a.db.ImageChecks(); err != nil {
 			a.logger.Warn("updates: load cache", "err", err)
 		} else {
 			cache = c
+		}
+		if ig, err := a.db.IgnoredImages(); err != nil {
+			a.logger.Warn("updates: load ignores", "err", err)
+		} else {
+			ignored = ig
 		}
 	}
 
@@ -87,6 +94,7 @@ func (a *api) listUpdates(w http.ResponseWriter, r *http.Request) {
 						e.CheckedAt = res.CheckedAt.UTC().Format(time.RFC3339)
 					}
 				}
+				e.Ignored = ignored[svc.Image]
 				byImage[svc.Image] = e
 				order = append(order, svc.Image)
 			}
@@ -122,6 +130,31 @@ func (a *api) checkUpdates(w http.ResponseWriter, r *http.Request) {
 
 	go a.runUpdateCheck(images)
 	writeJSON(w, http.StatusAccepted, map[string]int{"images": len(images)})
+}
+
+// setIgnore records or clears a user's decision to ignore updates for a
+// specific image reference (they've deliberately pinned that version). Ignored
+// images are excluded from "Update all" and shown in their own UI section.
+func (a *api) setIgnore(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Image   string `json:"image"`
+		Ignored bool   `json:"ignored"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Image) == "" {
+		writeError(w, http.StatusBadRequest, "invalid body: image is required")
+		return
+	}
+	if a.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if err := a.db.SetImageIgnored(strings.TrimSpace(body.Image), body.Ignored); err != nil {
+		a.logger.Error("set ignore", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to persist ignore")
+		return
+	}
+	a.hub.NotifyChanged("updates:ignore")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // runUpdateCheck performs the check (off the request path), persists results,

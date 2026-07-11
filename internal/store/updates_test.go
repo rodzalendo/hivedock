@@ -7,6 +7,34 @@ import (
 	"github.com/rogalinski/hivedock/internal/updates"
 )
 
+func TestImageIgnoreRoundTrip(t *testing.T) {
+	s := testStore(t)
+
+	img := "lscr.io/linuxserver/qbittorrent:5.1.2"
+	if err := s.SetImageIgnored(img, true); err != nil {
+		t.Fatalf("SetImageIgnored: %v", err)
+	}
+	// Idempotent re-ignore must not error (ON CONFLICT DO NOTHING).
+	if err := s.SetImageIgnored(img, true); err != nil {
+		t.Fatalf("re-ignore: %v", err)
+	}
+	ig, err := s.IgnoredImages()
+	if err != nil {
+		t.Fatalf("IgnoredImages: %v", err)
+	}
+	if !ig[img] {
+		t.Fatalf("image not ignored after set: %v", ig)
+	}
+
+	if err := s.SetImageIgnored(img, false); err != nil {
+		t.Fatalf("un-ignore: %v", err)
+	}
+	ig, _ = s.IgnoredImages()
+	if ig[img] {
+		t.Errorf("image still ignored after clear")
+	}
+}
+
 func TestImageChecksRoundTrip(t *testing.T) {
 	s := testStore(t)
 

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUpdates,
   checkUpdates,
   updateService,
   runStackAction,
+  setImageIgnore,
   type UpdateEntry,
 } from "../api";
 
@@ -32,18 +33,26 @@ export default function Updates() {
     return () => window.removeEventListener("hivedock:updates", done);
   }, []);
 
+  const qc = useQueryClient();
   const entries = useMemo(() => data ?? [], [data]);
-  const { available, current, other } = useMemo(() => {
+  const { available, ignored, current, other } = useMemo(() => {
     const available: UpdateEntry[] = [];
+    const ignored: UpdateEntry[] = [];
     const current: UpdateEntry[] = [];
     const other: UpdateEntry[] = [];
     for (const e of entries) {
-      if (e.hasUpdate) available.push(e);
+      if (e.hasUpdate && e.ignored) ignored.push(e);
+      else if (e.hasUpdate) available.push(e);
       else if (e.kind === "uptodate") current.push(e);
       else other.push(e);
     }
-    return { available, current, other };
+    return { available, ignored, current, other };
   }, [entries]);
+
+  async function toggleIgnore(e: UpdateEntry) {
+    await setImageIgnore(e.image, !e.ignored);
+    await qc.invalidateQueries({ queryKey: ["updates"] });
+  }
 
   // Only semver updates can be one-click applied (digest updates aren't a tag
   // rewrite). Those are the selectable/bulk-updatable rows.
@@ -217,7 +226,32 @@ export default function Updates() {
                 selectable={e.kind === "semver" && !!e.candidate}
                 checked={selected.has(e.image)}
                 onCheck={() => toggleSelect(e.image)}
+                onIgnore={() => toggleIgnore(e)}
                 disabled={busy}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {ignored.length > 0 && (
+        <div>
+          <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+            Ignored (keeping pinned version)
+          </h3>
+          <p className="mb-1.5 text-[11px] text-zinc-600">
+            An update exists, but you chose to stay on the pinned tag. These are
+            left out of “Update all”. Bump the tag in the compose file (or
+            un-ignore) to act on them.
+          </p>
+          <ul className="space-y-1">
+            {ignored.map((e) => (
+              <UpdateRow
+                key={e.image}
+                entry={e}
+                open={expanded.has(e.image)}
+                onToggle={() => toggle(e.image)}
+                onIgnore={() => toggleIgnore(e)}
               />
             ))}
           </ul>
@@ -279,6 +313,7 @@ function UpdateRow({
   selectable,
   checked,
   onCheck,
+  onIgnore,
   disabled,
 }: {
   entry: UpdateEntry;
@@ -289,6 +324,7 @@ function UpdateRow({
   selectable?: boolean;
   checked?: boolean;
   onCheck?: () => void;
+  onIgnore?: () => void;
   disabled?: boolean;
 }) {
   return (
@@ -350,6 +386,20 @@ function UpdateRow({
             className="shrink-0 rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
           >
             {applying ? "Updating…" : "Update & redeploy"}
+          </button>
+        )}
+        {onIgnore && (
+          <button
+            onClick={onIgnore}
+            disabled={disabled}
+            title={
+              entry.ignored
+                ? "Start showing this update again"
+                : "Keep your pinned version and exclude this from Update all"
+            }
+            className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+          >
+            {entry.ignored ? "Un-ignore" : "Ignore"}
           </button>
         )}
       </div>

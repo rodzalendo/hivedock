@@ -46,6 +46,40 @@ func (s *Store) SaveImageChecks(results []updates.Result) error {
 	return tx.Commit()
 }
 
+// SetImageIgnored records (or clears) a user's decision to ignore updates for a
+// specific image reference. Keyed by the full ref, so re-pinning to a new tag
+// clears the ignore on its own.
+func (s *Store) SetImageIgnored(image string, ignored bool) error {
+	if ignored {
+		if _, err := s.db.Exec(`INSERT INTO update_ignores (image) VALUES (?) ON CONFLICT(image) DO NOTHING`, image); err != nil {
+			return fmt.Errorf("ignore image: %w", err)
+		}
+		return nil
+	}
+	if _, err := s.db.Exec(`DELETE FROM update_ignores WHERE image = ?`, image); err != nil {
+		return fmt.Errorf("unignore image: %w", err)
+	}
+	return nil
+}
+
+// IgnoredImages returns the set of image references the user has ignored.
+func (s *Store) IgnoredImages() (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT image FROM update_ignores`)
+	if err != nil {
+		return nil, fmt.Errorf("query update_ignores: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var image string
+		if err := rows.Scan(&image); err != nil {
+			return nil, fmt.Errorf("scan update_ignores: %w", err)
+		}
+		out[image] = true
+	}
+	return out, rows.Err()
+}
+
 // ImageChecks loads all cached results, keyed by image reference.
 func (s *Store) ImageChecks() (map[string]updates.Result, error) {
 	rows, err := s.db.Query(`

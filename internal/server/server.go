@@ -82,6 +82,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Put("/settings", api.updateSettings)
 			r.Get("/updates", api.listUpdates)
 			r.Post("/updates/check", api.checkUpdates)
+			r.Put("/updates/ignore", api.setIgnore)
 			r.Get("/home", api.listHome)
 			r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
 			r.Put("/home/{stack}/{service}/icon", api.setIcon)

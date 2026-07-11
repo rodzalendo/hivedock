@@ -76,6 +76,10 @@ function iconSources(entry: HomeEntry): string[] {
     if (/^https?:\/\//.test(entry.icon)) out.push(entry.icon);
     else out.push(`/api/icons/${encodeURIComponent(stripExt(entry.icon))}`);
   }
+  // Hivedock has no dashboard-icons entry — serve its own bundled logo.
+  if (!entry.icon && (entry.iconSlug === "hivedock" || entry.stackSlug === "hivedock")) {
+    out.push("/favicon.svg");
+  }
   if (entry.iconSlug) out.push(`/api/icons/${encodeURIComponent(entry.iconSlug)}`);
   if (entry.stackSlug && entry.stackSlug !== entry.iconSlug) {
     out.push(`/api/icons/${encodeURIComponent(entry.stackSlug)}`);

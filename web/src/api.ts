@@ -313,10 +313,20 @@ export interface UpdateEntry {
   source?: string;
   error?: string;
   checkedAt?: string;
+  ignored?: boolean;
   usedBy: UpdateUsage[];
 }
 
 export const fetchUpdates = () => getJSON<UpdateEntry[]>("/api/updates");
+
+// setImageIgnore records/clears a user's choice to keep a pinned version and
+// hide its update from "Update all". Keyed by the full image reference.
+export async function setImageIgnore(
+  image: string,
+  ignored: boolean,
+): Promise<void> {
+  await mutate("/api/updates/ignore", "PUT", { image, ignored });
+}
 
 // updateService rewrites a service's image tag in its compose file (comment-
 // preserving). Save ≠ deploy — deploy the stack separately to apply.

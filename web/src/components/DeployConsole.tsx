@@ -25,14 +25,45 @@ type Phase = "idle" | "running" | "ok" | "error";
 const actions: {
   id: StackAction;
   label: string;
+  title: string;
   danger?: boolean;
   Icon: (p: { className?: string }) => JSX.Element;
 }[] = [
-  { id: "up", label: "Deploy", Icon: PlayIcon },
-  { id: "pull", label: "Pull", Icon: DownloadIcon },
-  { id: "restart", label: "Restart", Icon: RestartIcon },
-  { id: "stop", label: "Stop", Icon: StopIcon },
-  { id: "down", label: "Down", danger: true, Icon: ChevronsDownIcon },
+  {
+    id: "up",
+    label: "Deploy",
+    title:
+      "docker compose up -d — create/recreate and start containers from the compose file. Run this to apply edits or pulled images.",
+    Icon: PlayIcon,
+  },
+  {
+    id: "pull",
+    label: "Pull",
+    title:
+      "docker compose pull — download newer images for the tags in the compose file. It does NOT restart anything; press Deploy afterward to apply.",
+    Icon: DownloadIcon,
+  },
+  {
+    id: "restart",
+    label: "Restart",
+    title: "docker compose restart — restart the containers without recreating them.",
+    Icon: RestartIcon,
+  },
+  {
+    id: "stop",
+    label: "Stop",
+    title:
+      "docker compose stop — stop the containers but keep them (start again with Deploy).",
+    Icon: StopIcon,
+  },
+  {
+    id: "down",
+    label: "Down",
+    title:
+      "docker compose down — stop AND remove the containers and the stack's network. Your compose file and named volumes are kept; the stack shows as stopped until you Deploy again.",
+    danger: true,
+    Icon: ChevronsDownIcon,
+  },
 ];
 
 // DeployConsole renders the lifecycle action buttons for a managed stack plus a
@@ -106,6 +137,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             key={a.id}
             onClick={() => trigger(a.id)}
             disabled={running}
+            title={a.title}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
               a.id === "up"
                 ? "bg-accent-600 text-zinc-950 hover:bg-accent-500"
