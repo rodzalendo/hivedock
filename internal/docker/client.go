@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 )
 
@@ -47,6 +49,33 @@ func (c *Client) Close() error { return c.cli.Close() }
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.cli.Ping(ctx)
 	return err
+}
+
+// PruneReport summarizes what a prune reclaimed.
+type PruneReport struct {
+	ImagesDeleted  int    `json:"imagesDeleted"`
+	SpaceReclaimed uint64 `json:"spaceReclaimed"`
+}
+
+// Prune removes dangling images (untagged layers left behind by updates) and
+// stale build cache. It never touches tagged images, containers, volumes, or
+// networks — the conservative subset that's always safe after image updates.
+func (c *Client) Prune(ctx context.Context) (PruneReport, error) {
+	var rep PruneReport
+
+	// Empty filter args = the API's default: dangling images only.
+	imgs, err := c.cli.ImagesPrune(ctx, filters.NewArgs())
+	if err != nil {
+		return rep, fmt.Errorf("prune images: %w", err)
+	}
+	rep.ImagesDeleted = len(imgs.ImagesDeleted)
+	rep.SpaceReclaimed = imgs.SpaceReclaimed
+
+	// Build cache prune is best-effort (older daemons may not support it).
+	if bc, err := c.cli.BuildCachePrune(ctx, types.BuildCachePruneOptions{}); err == nil && bc != nil {
+		rep.SpaceReclaimed += bc.SpaceReclaimed
+	}
+	return rep, nil
 }
 
 // Port is a normalized published/exposed port.

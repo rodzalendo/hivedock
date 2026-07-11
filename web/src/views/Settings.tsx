@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchSettings, saveSettings } from "../api";
+import { fetchSettings, saveSettings, pruneSystem } from "../api";
+import { SpinnerIcon } from "../components/icons";
 
 export default function Settings() {
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -103,6 +104,8 @@ export default function Settings() {
         </div>
       </section>
 
+      <PruneSection />
+
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <h3 className="mb-3 text-sm font-medium text-zinc-200">Environment</h3>
         <p className="mb-3 text-[11px] text-zinc-600">
@@ -129,6 +132,57 @@ export default function Settings() {
         </dl>
       </section>
     </div>
+  );
+}
+
+// PruneSection frees disk space: dangling images (the untagged layers that
+// pile up after updates) and stale build cache. Tagged images, containers,
+// volumes, and networks are never touched.
+function PruneSection() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function onPrune() {
+    setBusy(true);
+    setResult(null);
+    try {
+      const rep = await pruneSystem();
+      const mb = rep.spaceReclaimed / (1024 * 1024);
+      setResult(
+        rep.imagesDeleted === 0 && rep.spaceReclaimed === 0
+          ? "Nothing to prune — already clean."
+          : `Removed ${rep.imagesDeleted} dangling image${rep.imagesDeleted === 1 ? "" : "s"}, reclaimed ${
+              mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`
+            }.`,
+      );
+    } catch (err) {
+      setResult(err instanceof Error ? err.message : "Prune failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-1 text-sm font-medium text-zinc-200">Maintenance</h3>
+      <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
+        Image updates leave the old, now-untagged image layers behind on disk.
+        Prune removes those dangling images and stale build cache. It never
+        touches tagged images, containers, volumes, or networks, so it is safe
+        to run any time.
+      </p>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onPrune}
+          disabled={busy}
+          className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {busy && <SpinnerIcon className="h-3.5 w-3.5" />}
+          {busy ? "Pruning…" : "Prune dangling images"}
+        </button>
+        {result && <span className="text-xs text-zinc-500">{result}</span>}
+      </div>
+    </section>
   );
 }
 

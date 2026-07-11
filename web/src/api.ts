@@ -102,8 +102,22 @@ export interface HostStats {
   cpuPercent: number;
   memUsedBytes: number;
   memTotalBytes: number;
+  diskUsedBytes?: number;
+  diskTotalBytes?: number;
   numCpu: number;
   sampledAt?: string;
+}
+
+export interface PruneReport {
+  imagesDeleted: number;
+  spaceReclaimed: number;
+}
+
+// pruneSystem removes dangling images and stale build cache. Never touches
+// tagged images, containers, volumes, or networks.
+export async function pruneSystem(): Promise<PruneReport> {
+  const res = await mutate("/api/system/prune", "POST");
+  return (await res.json()) as PruneReport;
 }
 
 export interface PortLink {

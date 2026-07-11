@@ -78,6 +78,7 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	go watcher.Run(ctx)
 
 	host := hoststats.NewSampler(2 * time.Second)
+	host.SetDiskPath(cfg.StacksDir) // bind-mounted → reflects the host disk
 	go host.Run(ctx)
 
 	icons := discovery.NewIconResolver(cfg.DataDir, nil)

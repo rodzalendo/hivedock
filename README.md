@@ -6,7 +6,9 @@
 
 <p align="center"><b>One container for your homelab's Docker: compose stack management, a zero-config app dashboard, and trustworthy image update checking. A single small binary.</b></p>
 
+<!-- screenshot: add docs/screenshots/home.png then uncomment
 ![Home dashboard](docs/screenshots/home.png)
+-->
 
 ## Why HiveDock
 
@@ -24,9 +26,10 @@ Most homelabs end up running three separate tools: one to manage compose stacks,
 - **Updates**: semver-aware tag checking across Docker Hub, ghcr, lscr, and quay, digest checking for `latest`-style tags, one-click update and redeploy (single or bulk), per-image ignore for pinned versions, webhook notifications when new updates appear.
 - **Ops**: single binary with embedded UI, SQLite for app state only, WebSocket live updates, session auth with CSRF protection, multi-arch images (amd64 and arm64), works in Docker-in-LXC.
 
+<!-- screenshots: add docs/screenshots/stacks.png and updates.png then uncomment
 ![Stacks view](docs/screenshots/stacks.png)
-
 ![Updates view](docs/screenshots/updates.png)
+-->
 
 ## Install
 
@@ -101,23 +104,3 @@ A Go backend (chi router, Docker SDK for reads, `docker compose` subprocess for 
 The entire codebase was written with [Claude](https://claude.com): architecture, backend, frontend, tests, and CI, end to end.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of record and [docs/PRD.md](docs/PRD.md) for the product spec.
-
-## Development
-
-Prereqs: Go 1.23+, Node 20+, Docker, and [Task](https://taskfile.dev).
-
-```sh
-task fixture   # create sample stacks in ./dev-stacks
-task dev       # vite (:5173) proxying to the Go server (:5001)
-task test      # go test + vitest
-task build     # multi-stage image (vite build -> go build -> alpine)
-```
-
-No local Go? Build and test in a container:
-
-```sh
-docker run --rm -v "$PWD:/src" -w /src -e CGO_ENABLED=0 golang:1.23-alpine \
-  sh -c "go test ./internal/... ./cmd/..."
-```
-
-See [docs/CLAUDE.md](docs/CLAUDE.md) for the non-negotiable invariants and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Proxmox/LXC deployment notes.

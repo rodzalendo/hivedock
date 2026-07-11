@@ -31,6 +31,13 @@ export default function HostStrip() {
         pct={memPct}
         text={`${fmtBytes(data.memUsedBytes)} / ${fmtBytes(data.memTotalBytes)}`}
       />
+      {!!data.diskTotalBytes && (
+        <Meter
+          label="Disk"
+          pct={((data.diskUsedBytes ?? 0) / data.diskTotalBytes) * 100}
+          text={`${fmtBytes(data.diskUsedBytes ?? 0)} / ${fmtBytes(data.diskTotalBytes)}`}
+        />
+      )}
       {data.numCpu > 0 && (
         <span className="text-zinc-500">
           {data.numCpu} vCPU

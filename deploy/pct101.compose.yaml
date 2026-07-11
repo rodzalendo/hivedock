@@ -9,7 +9,7 @@
 #   # open http://<pct101-ip>:5002   (Dockge stays on :5001)
 services:
   hivedock:
-    image: ghcr.io/rodzalendo/hivedock:edge
+    image: ghcr.io/rodzalendo/hivedock:latest   # stable; use :edge to track main
     container_name: hivedock
     restart: unless-stopped
     ports:

@@ -79,6 +79,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Get("/stacks/{name}/env", api.getEnv)
 			r.Put("/stacks/{name}/env", api.putEnv)
 			r.Get("/host/stats", api.hostStats)
+			r.Post("/system/prune", api.prune)
 			r.Get("/settings", api.settings)
 			r.Put("/settings", api.updateSettings)
 			r.Get("/updates", api.listUpdates)

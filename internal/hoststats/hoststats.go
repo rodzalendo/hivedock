@@ -16,18 +16,21 @@ import (
 
 // Snapshot is the latest sampled host state.
 type Snapshot struct {
-	Available     bool    `json:"available"`
-	CPUPercent    float64 `json:"cpuPercent"`
-	MemUsedBytes  uint64  `json:"memUsedBytes"`
-	MemTotalBytes uint64  `json:"memTotalBytes"`
-	NumCPU        int     `json:"numCpu"`
-	SampledAt     string  `json:"sampledAt,omitempty"`
+	Available      bool    `json:"available"`
+	CPUPercent     float64 `json:"cpuPercent"`
+	MemUsedBytes   uint64  `json:"memUsedBytes"`
+	MemTotalBytes  uint64  `json:"memTotalBytes"`
+	DiskUsedBytes  uint64  `json:"diskUsedBytes,omitempty"`
+	DiskTotalBytes uint64  `json:"diskTotalBytes,omitempty"`
+	NumCPU         int     `json:"numCpu"`
+	SampledAt      string  `json:"sampledAt,omitempty"`
 }
 
 // Sampler periodically refreshes a Snapshot in the background so the HTTP
 // handler can return instantly (no per-request sampling latency).
 type Sampler struct {
 	interval time.Duration
+	diskPath string
 
 	mu      sync.RWMutex
 	current Snapshot
@@ -41,7 +44,16 @@ func NewSampler(interval time.Duration) *Sampler {
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
-	return &Sampler{interval: interval}
+	return &Sampler{interval: interval, diskPath: "/"}
+}
+
+// SetDiskPath points disk sampling at a specific path's filesystem. Point it
+// at the bind-mounted stacks dir so the number reflects the host disk rather
+// than the container's overlay.
+func (s *Sampler) SetDiskPath(path string) {
+	if path != "" {
+		s.diskPath = path
+	}
 }
 
 // Snapshot returns the most recent sample.
@@ -82,6 +94,10 @@ func (s *Sampler) update() {
 	if memOK {
 		snap.MemUsedBytes = used
 		snap.MemTotalBytes = total
+	}
+	if du, dt, ok := readDisk(s.diskPath); ok {
+		snap.DiskUsedBytes = du
+		snap.DiskTotalBytes = dt
 	}
 
 	s.mu.Lock()
