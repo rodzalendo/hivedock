@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -22,10 +23,15 @@ func (a *api) listHome(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Warn("home: load hidden overrides", "err", err)
 	}
+	iconOverrides, err := a.iconOverrides()
+	if err != nil {
+		a.logger.Warn("home: load icon overrides", "err", err)
+	}
 
 	entries := discovery.Resolve(stacksList, discovery.Options{
 		Host:           a.publicHost(r),
 		HiddenOverride: overrides,
+		IconOverride:   iconOverrides,
 	})
 	if entries == nil {
 		entries = []discovery.Entry{}
@@ -53,6 +59,31 @@ func (a *api) setVisibility(w http.ResponseWriter, r *http.Request) {
 	if err := a.db.SetServiceHidden(stack, service, body.Hidden); err != nil {
 		a.logger.Error("set visibility", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to persist preference")
+		return
+	}
+	a.hub.NotifyChanged("prefs")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setIcon persists a user's custom icon (URL or dashboard-icons slug) for a
+// service; an empty value clears it and reverts to the automatic icon.
+func (a *api) setIcon(w http.ResponseWriter, r *http.Request) {
+	stack := chi.URLParam(r, "stack")
+	service := chi.URLParam(r, "service")
+	var body struct {
+		Icon string `json:"icon"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if a.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if err := a.db.SetServiceIcon(stack, service, strings.TrimSpace(body.Icon)); err != nil {
+		a.logger.Error("set icon", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to persist icon")
 		return
 	}
 	a.hub.NotifyChanged("prefs")
@@ -96,5 +127,24 @@ func (a *api) hiddenOverrides() (func(stack, service string) (bool, bool), error
 			}
 		}
 		return false, false
+	}, nil
+}
+
+// iconOverrides returns a lookup over persisted custom-icon prefs.
+func (a *api) iconOverrides() (func(stack, service string) (string, bool), error) {
+	if a.db == nil {
+		return nil, nil
+	}
+	m, err := a.db.ServiceIconOverrides()
+	if err != nil {
+		return nil, err
+	}
+	return func(stack, service string) (string, bool) {
+		if svcs, ok := m[stack]; ok {
+			if v, ok := svcs[service]; ok {
+				return v, true
+			}
+		}
+		return "", false
 	}, nil
 }

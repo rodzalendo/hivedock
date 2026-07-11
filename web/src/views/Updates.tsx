@@ -336,8 +336,11 @@ function UpdateRow({
         )}
         {!entry.hasUpdate && <StatusChip entry={entry} />}
 
-        <span className="ml-1 text-xs text-zinc-600">
-          {entry.usedBy.length} use{entry.usedBy.length === 1 ? "" : "s"}
+        <span
+          className="ml-1 hidden max-w-[16rem] shrink-0 truncate text-xs text-zinc-500 sm:inline"
+          title={entry.usedBy.map((u) => `${u.stack}/${u.service}`).join(", ")}
+        >
+          {usageLabel(entry.usedBy)}
         </span>
       </button>
         {onApply && (
@@ -387,7 +390,24 @@ function UpdateRow({
   );
 }
 
+// usageLabel summarizes where an image is used: the distinct stack names, with
+// an overflow count when there are more than two.
+function usageLabel(usedBy: UpdateEntry["usedBy"]): string {
+  const stacks = [...new Set(usedBy.map((u) => u.stack))];
+  if (stacks.length === 0) return "";
+  if (stacks.length <= 2) return stacks.join(", ");
+  return `${stacks[0]}, ${stacks[1]} +${stacks.length - 2}`;
+}
+
 function StatusChip({ entry }: { entry: UpdateEntry }) {
+  // An unresolved env-var tag (e.g. redis:${REDIS_TAG}) can't be version-checked.
+  if (entry.kind === "unsupported" && /\$[{(]/.test(entry.image)) {
+    return (
+      <span className="rounded bg-zinc-700/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+        env-managed
+      </span>
+    );
+  }
   const map: Record<string, { label: string; cls: string }> = {
     uptodate: { label: "up to date", cls: "bg-green-500/15 text-green-400" },
     unchecked: { label: "not checked", cls: "bg-zinc-700/40 text-zinc-400" },

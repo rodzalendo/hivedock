@@ -99,8 +99,10 @@ test("renders the home dashboard by default", async () => {
   renderApp();
 
   expect(screen.getByText("hivedock")).toBeInTheDocument();
+  // Cards render in a single flat grid (no per-group headers); the card shows
+  // the app name and its stack as the subtitle.
   await waitFor(() => expect(screen.getByText("Jellyfin")).toBeInTheDocument());
-  expect(screen.getByText("Media")).toBeInTheDocument();
+  expect(screen.getByText("jellyfin")).toBeInTheDocument();
 });
 
 test("navigating to Stacks shows the stacks list", async () => {

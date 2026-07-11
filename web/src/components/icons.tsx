@@ -115,6 +115,25 @@ export function EyeIcon({ className }: IconProps) {
   );
 }
 
+export function ImageIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="2" />
+      <circle cx="5.7" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <path d="M3 11.5l3.2-3 2.3 2 2-1.7 2.5 2.7" />
+    </svg>
+  );
+}
+
 export function EyeOffIcon({ className }: IconProps) {
   return (
     <svg

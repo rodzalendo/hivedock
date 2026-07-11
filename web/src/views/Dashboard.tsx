@@ -1,9 +1,14 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchHome, setServiceVisibility, type HomeEntry } from "../api";
+import {
+  fetchHome,
+  setServiceVisibility,
+  setServiceIcon,
+  type HomeEntry,
+} from "../api";
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
-import { EyeIcon, EyeOffIcon } from "../components/icons";
+import { EyeIcon, EyeOffIcon, ImageIcon } from "../components/icons";
 
 export default function Dashboard() {
   const { data, isLoading, isError, error } = useQuery({
@@ -28,7 +33,6 @@ export default function Dashboard() {
     });
   }, [entries, search, showHidden]);
 
-  const groups = useMemo(() => groupBy(filtered), [filtered]);
   const hiddenCount = entries.filter((e) => e.hidden).length;
 
   return (
@@ -67,18 +71,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {groups.map(([group, items]) => (
-        <section key={group}>
-          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-            {group}
-          </h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((e) => (
-              <Card key={`${e.stack}/${e.service}`} entry={e} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {filtered.map((e) => (
+            <Card key={`${e.stack}/${e.service}`} entry={e} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -153,6 +152,7 @@ function Card({ entry }: { entry: HomeEntry }) {
             )}
           </div>
         )}
+        <IconEditor entry={entry} />
         <button
           onClick={() => toggleHidden.mutate()}
           className={`rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300 ${
@@ -171,18 +171,98 @@ function Card({ entry }: { entry: HomeEntry }) {
   );
 }
 
+// IconEditor lets the user set a custom icon (image URL or dashboard-icons
+// slug) for a card, or reset to the automatic one. Persisted server-side.
+function IconEditor({ entry }: { entry: HomeEntry }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(entry.icon ?? "");
+
+  const save = useMutation({
+    mutationFn: (icon: string) => setServiceIcon(entry.stack, entry.service, icon),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["home"] });
+      setOpen(false);
+    },
+  });
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => {
+          setValue(entry.icon ?? "");
+          setOpen((v) => !v);
+        }}
+        className="rounded px-1.5 py-1 text-zinc-600 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-300 group-hover:opacity-100"
+        title="Set icon"
+      >
+        <ImageIcon className="h-4 w-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
+          <label className="mb-1 block text-[11px] font-medium text-zinc-400">
+            Icon URL or slug
+          </label>
+          <input
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save.mutate(value.trim());
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder="https://…/icon.png  or  jellyfin"
+            className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
+          />
+          <p className="mt-1 text-[10px] leading-snug text-zinc-600">
+            A full image URL, or a{" "}
+            <a
+              href="https://github.com/homarr-labs/dashboard-icons"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent-500 hover:underline"
+            >
+              dashboard-icons
+            </a>{" "}
+            name. Leave empty to auto-detect.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => save.mutate(value.trim())}
+              disabled={save.isPending}
+              className="rounded-md bg-accent-600 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
+            >
+              Save
+            </button>
+            {entry.icon && (
+              <button
+                onClick={() => save.mutate("")}
+                disabled={save.isPending}
+                className="rounded-md px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+              >
+                Reset
+              </button>
+            )}
+            <button
+              onClick={() => setOpen(false)}
+              className="ml-auto rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              Cancel
+            </button>
+          </div>
+          {save.isError && (
+            <p className="mt-1 text-[10px] text-red-400">
+              {(save.error as Error).message}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusDotSmall({ status }: { status: string }) {
   const color =
     status === "running" ? "bg-green-500" : status === "absent" ? "bg-zinc-600" : "bg-amber-500";
   return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} title={status} />;
-}
-
-function groupBy(entries: HomeEntry[]): [string, HomeEntry[]][] {
-  const map = new Map<string, HomeEntry[]>();
-  for (const e of entries) {
-    const arr = map.get(e.group) ?? [];
-    arr.push(e);
-    map.set(e.group, arr);
-  }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
 }

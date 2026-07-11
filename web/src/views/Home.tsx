@@ -11,7 +11,7 @@ export default function Home() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="max-w-3xl">
       <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-zinc-400">
         Backend status
       </h2>

@@ -119,6 +119,7 @@ export interface HomeEntry {
   url?: string;
   ports?: PortLink[];
   iconSlug?: string;
+  stackSlug?: string; // icon fallback when the image slug has no asset
   icon?: string; // explicit icon label (may be a URL or a slug)
   description?: string;
   status: string;
@@ -136,6 +137,20 @@ export async function setServiceVisibility(
     `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/visibility`,
     "PUT",
     { hidden },
+  );
+}
+
+// setServiceIcon persists a custom icon (URL or dashboard-icons slug) for a
+// service; pass an empty string to clear it and revert to the automatic icon.
+export async function setServiceIcon(
+  stack: string,
+  service: string,
+  icon: string,
+): Promise<void> {
+  await mutate(
+    `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/icon`,
+    "PUT",
+    { icon },
   );
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/rogalinski/hivedock/internal/events"
@@ -68,7 +69,11 @@ func (a *api) listUpdates(w http.ResponseWriter, r *http.Request) {
 			e, ok := byImage[svc.Image]
 			if !ok {
 				e = &updateEntry{Image: svc.Image, Kind: "unchecked", UsedBy: []usage{}}
-				if res, cached := cache[svc.Image]; cached {
+				if isEnvTemplated(svc.Image) {
+					// Tag is an unresolved env var (e.g. ${IMMICH_VERSION}); we
+					// can't check it without env substitution. Not an error.
+					e.Kind = "unsupported"
+				} else if res, cached := cache[svc.Image]; cached {
 					e.Kind = res.Kind
 					e.HasUpdate = res.HasUpdate
 					e.Current = res.Current
@@ -243,6 +248,13 @@ func (a *api) backgroundCheck(ctx context.Context) {
 	a.runUpdateCheck(managedImages(stackList)) // clears the guard via defer
 }
 
+// isEnvTemplated reports whether an image reference still contains an
+// unresolved environment variable (e.g. redis:${REDIS_TAG}). Such images can't
+// be registry-checked without env substitution, so they're skipped, not errored.
+func isEnvTemplated(image string) bool {
+	return strings.Contains(image, "${") || strings.Contains(image, "$(")
+}
+
 // managedImages returns the distinct images across managed stacks.
 func managedImages(stackList []stacks.Stack) []string {
 	seen := map[string]bool{}
@@ -252,7 +264,7 @@ func managedImages(stackList []stacks.Stack) []string {
 			continue
 		}
 		for _, svc := range st.Services {
-			if svc.Image == "" || seen[svc.Image] {
+			if svc.Image == "" || seen[svc.Image] || isEnvTemplated(svc.Image) {
 				continue
 			}
 			seen[svc.Image] = true

@@ -17,16 +17,26 @@ function hashColor(s: string): string {
   return avatarColors[Math.abs(h) % avatarColors.length];
 }
 
-// AppIcon resolves an entry's icon: explicit URL label → Hivedock icon proxy
-// (dashboard-icons, cached) → deterministic letter avatar on any failure. The
-// browser never depends on an external host directly.
+// AppIcon resolves an entry's icon by trying, in order: an explicit icon (user
+// override or label), the image slug, then the stack-name slug — each via the
+// Hivedock icon proxy (dashboard-icons, cached). It advances to the next source
+// when one fails to load, and falls back to a deterministic letter avatar when
+// all are exhausted. The browser never depends on an external host directly.
 export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?: number }) {
-  const [failed, setFailed] = useState(false);
+  const sources = iconSources(entry);
+  const [idx, setIdx] = useState(0);
 
-  const src = iconSrc(entry);
-  const showLetter = failed || !src;
+  // entry identity can change under the same DOM node; reset to the first source.
+  const key = sources.join("|");
+  const [seenKey, setSeenKey] = useState(key);
+  if (key !== seenKey) {
+    setSeenKey(key);
+    setIdx(0);
+  }
 
-  if (showLetter) {
+  const src = sources[idx];
+
+  if (!src) {
     const c = hashColor(entry.name);
     return (
       <div
@@ -53,18 +63,26 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
       height={size}
       className="shrink-0 rounded-[7px] object-contain"
       style={{ width: size, height: size }}
-      onError={() => setFailed(true)}
+      onError={() => setIdx((i) => i + 1)}
     />
   );
 }
 
-function iconSrc(entry: HomeEntry): string | null {
+// iconSources returns the ordered list of icon URLs to try for an entry.
+function iconSources(entry: HomeEntry): string[] {
+  const out: string[] = [];
   if (entry.icon) {
-    // Explicit icon label: full URL used directly; otherwise treat as a slug.
-    if (/^https?:\/\//.test(entry.icon)) return entry.icon;
-    const slug = entry.icon.replace(/\.(png|svg|webp)$/i, "");
-    return `/api/icons/${encodeURIComponent(slug)}`;
+    // Explicit icon: full URL used directly; otherwise treat as a slug.
+    if (/^https?:\/\//.test(entry.icon)) out.push(entry.icon);
+    else out.push(`/api/icons/${encodeURIComponent(stripExt(entry.icon))}`);
   }
-  if (entry.iconSlug) return `/api/icons/${encodeURIComponent(entry.iconSlug)}`;
-  return null;
+  if (entry.iconSlug) out.push(`/api/icons/${encodeURIComponent(entry.iconSlug)}`);
+  if (entry.stackSlug && entry.stackSlug !== entry.iconSlug) {
+    out.push(`/api/icons/${encodeURIComponent(entry.stackSlug)}`);
+  }
+  return out;
+}
+
+function stripExt(s: string): string {
+  return s.replace(/\.(png|svg|webp)$/i, "");
 }

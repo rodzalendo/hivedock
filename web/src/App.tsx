@@ -5,6 +5,7 @@ import Stacks from "./views/Stacks";
 import Dashboard from "./views/Dashboard";
 import Updates from "./views/Updates";
 import Settings from "./views/Settings";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useLiveUpdates } from "./useLiveUpdates";
 import { fetchAuthStatus, fetchUpdates, logout, type AuthStatus } from "./api";
 import {
@@ -100,11 +101,13 @@ export default function App() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
-        {view === "home" && <Dashboard />}
-        {view === "stacks" && <Stacks />}
-        {view === "updates" && <Updates />}
-        {view === "status" && <Home />}
-        {view === "settings" && <Settings />}
+        <ErrorBoundary resetKey={view}>
+          {view === "home" && <Dashboard />}
+          {view === "stacks" && <Stacks />}
+          {view === "updates" && <Updates />}
+          {view === "status" && <Home />}
+          {view === "settings" && <Settings />}
+        </ErrorBoundary>
       </main>
     </div>
   );

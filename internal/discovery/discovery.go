@@ -26,7 +26,8 @@ type Entry struct {
 	URL         string     `json:"url,omitempty"`
 	Ports       []PortLink `json:"ports,omitempty"`
 	IconSlug    string     `json:"iconSlug,omitempty"` // normalized image slug (icon matcher resolves it)
-	Icon        string     `json:"icon,omitempty"`     // explicit icon label if set
+	StackSlug   string     `json:"stackSlug,omitempty"` // normalized stack name — icon fallback when the image slug has no asset
+	Icon        string     `json:"icon,omitempty"`     // explicit icon label (user override or label) if set
 	Description string     `json:"description,omitempty"`
 	Status      string     `json:"status"` // running | stopped | ...
 	Hidden      bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
@@ -40,6 +41,9 @@ type Options struct {
 	// HiddenOverride reports a user's explicit hide/unhide for a service, taking
 	// precedence over the auto-hide heuristic. Returns (value, set).
 	HiddenOverride func(stack, service string) (bool, bool)
+	// IconOverride reports a user's custom icon (URL or slug) for a service,
+	// taking precedence over any label. Returns (value, set).
+	IconOverride func(stack, service string) (string, bool)
 }
 
 // Resolve produces one entry per service across all stacks (managed + external).
@@ -90,6 +94,14 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 		url, ports = urlHeuristic(svc, opts.Host)
 	}
 
+	// Icon: user override wins over any compose label.
+	icon := firstLabel(l, "hivedock.icon", "homepage.icon")
+	if opts.IconOverride != nil {
+		if v, set := opts.IconOverride(st.Name, svc.Name); set {
+			icon = v
+		}
+	}
+
 	e := Entry{
 		Stack:       st.Name,
 		Service:     svc.Name,
@@ -97,8 +109,9 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 		Group:       group,
 		URL:         url,
 		Ports:       ports,
-		Icon:        firstLabel(l, "hivedock.icon", "homepage.icon"),
+		Icon:        icon,
 		IconSlug:    normalizeImage(svc.Image),
+		StackSlug:   normalizeImage(st.Name),
 		Description: firstLabel(l, "hivedock.description", "homepage.description"),
 		Status:      svc.State,
 		Hidden:      isHidden(st, svc, opts),

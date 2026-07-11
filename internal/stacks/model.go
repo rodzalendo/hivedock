@@ -138,7 +138,7 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool, hashes 
 	}
 
 	stackDrift := false
-	var services []Service
+	services := make([]Service, 0, len(names)) // never nil — the API contract is a list
 	for name := range names {
 		svc := Service{Name: name, State: "absent"}
 		var composeLabels map[string]string
@@ -176,7 +176,7 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool, hashes 
 
 func buildExternal(project string, cts []docker.Container) Stack {
 	byService := indexByService(cts)
-	var services []Service
+	services := make([]Service, 0, len(byService))
 	for name, ct := range byService {
 		svc := Service{Name: name, State: "absent"}
 		applyContainer(&svc, ct)
