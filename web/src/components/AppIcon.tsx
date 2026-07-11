@@ -57,6 +57,7 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
 
   return (
     <img
+      key={src} // remount per source: a stale <img> error/load state must not leak into the next src
       src={src}
       alt=""
       width={size}
@@ -69,9 +70,10 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
 }
 
 // iconSources returns the ordered list of icon URLs to try for an entry.
+// Empty strings are never emitted (an <img src=""> renders a broken tile).
 function iconSources(entry: HomeEntry): string[] {
   const out: string[] = [];
-  if (entry.icon) {
+  if (entry.icon && entry.icon.trim() !== "") {
     // Explicit icon: full URL used directly; otherwise treat as a slug.
     if (/^https?:\/\//.test(entry.icon)) out.push(entry.icon);
     else out.push(`/api/icons/${encodeURIComponent(stripExt(entry.icon))}`);

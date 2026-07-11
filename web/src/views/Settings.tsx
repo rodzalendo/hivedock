@@ -48,7 +48,7 @@ export default function Settings() {
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <h3 className="mb-1 text-sm font-medium text-zinc-200">Notifications</h3>
         <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-          When an update check finds a <em>new</em> image update, Hivedock sends
+          When an update check finds a <em>new</em> image update, HiveDock sends
           an HTTP <span className="font-mono text-zinc-400">POST</span> with a
           JSON body to the URL below — so you can get notified without watching
           this page. Point it at any service that accepts an incoming webhook

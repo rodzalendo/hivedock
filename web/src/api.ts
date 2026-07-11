@@ -128,6 +128,26 @@ export interface HomeEntry {
 
 export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
 
+// HomeLayout is the user's dashboard arrangement. All fields optional; the
+// server stores it as an opaque JSON object.
+export interface HomeLayout {
+  columns?: number; // group columns on wide screens (1-4)
+  sort?: "name" | "status";
+  groupOrder?: string[]; // original group keys, in display order
+  groupTitles?: Record<string, string>; // original key -> custom title
+}
+
+export async function fetchHomeLayout(): Promise<HomeLayout> {
+  const v = await getJSON<unknown>("/api/home/layout");
+  // Tolerate anything non-object (older servers, mocks): fall back to {}.
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as HomeLayout;
+  return {};
+}
+
+export async function saveHomeLayout(layout: HomeLayout): Promise<void> {
+  await mutate("/api/home/layout", "PUT", layout);
+}
+
 export async function setServiceVisibility(
   stack: string,
   service: string,

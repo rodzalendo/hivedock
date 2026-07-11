@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -59,6 +60,56 @@ func (a *api) setVisibility(w http.ResponseWriter, r *http.Request) {
 	if err := a.db.SetServiceHidden(stack, service, body.Hidden); err != nil {
 		a.logger.Error("set visibility", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to persist preference")
+		return
+	}
+	a.hub.NotifyChanged("prefs")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// homeLayoutKey is the settings key holding the dashboard layout preferences
+// (column count, sort, group order, custom group titles). The value is an
+// opaque JSON object owned by the frontend; the server only validates shape
+// and size.
+const homeLayoutKey = "home_layout"
+
+// getHomeLayout returns the saved dashboard layout, or {} when none is set.
+func (a *api) getHomeLayout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if a.db == nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	v, ok, err := a.db.GetSetting(homeLayoutKey)
+	if err != nil {
+		a.logger.Warn("home layout: load", "err", err)
+	}
+	if !ok || v == "" {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	_, _ = w.Write([]byte(v))
+}
+
+// putHomeLayout stores the dashboard layout. The body must be a JSON object
+// (bounded in size); its fields are the frontend's business.
+func (a *api) putHomeLayout(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16*1024+1))
+	if err != nil || len(body) > 16*1024 {
+		writeError(w, http.StatusBadRequest, "layout too large (max 16KB)")
+		return
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		writeError(w, http.StatusBadRequest, "layout must be a JSON object")
+		return
+	}
+	if a.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if err := a.db.SetSetting(homeLayoutKey, string(body)); err != nil {
+		a.logger.Error("home layout: save", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to save layout")
 		return
 	}
 	a.hub.NotifyChanged("prefs")

@@ -8,6 +8,7 @@ import {
   setImageIgnore,
   type UpdateEntry,
 } from "../api";
+import { SpinnerIcon } from "../components/icons";
 
 const diffColor: Record<string, string> = {
   major: "bg-red-500/15 text-red-400",
@@ -26,9 +27,14 @@ export default function Updates() {
   const [applyingImages, setApplyingImages] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // A completed check (updates:changed) clears the checking state.
+  // A completed check (updates:changed) clears the checking state and any
+  // in-flight "applying" rows — the re-check after an update is what confirms
+  // the new state, so this is the real end of the operation.
   useEffect(() => {
-    const done = () => setChecking(false);
+    const done = () => {
+      setChecking(false);
+      setApplyingImages(new Set());
+    };
     window.addEventListener("hivedock:updates", done);
     return () => window.removeEventListener("hivedock:updates", done);
   }, []);
@@ -106,7 +112,9 @@ export default function Updates() {
 
   // Rewrite every selected update's compose files, redeploy each affected stack
   // once (a single `up` picks up all changed services in that stack), then
-  // re-check to refresh status.
+  // re-check to refresh status. The rows stay in "applying" state (spinner)
+  // until the re-check's updates:changed event lands — that's when the new
+  // state is actually confirmed — with a timeout as a safety net.
   async function applyMany(list: UpdateEntry[]) {
     const targets = list.filter((e) => e.kind === "semver" && e.candidate);
     if (targets.length === 0 || busy) return;
@@ -124,13 +132,14 @@ export default function Updates() {
         await runStackAction(s, "up");
       }
       setNote(
-        `Updated ${targets.length} image${targets.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"}; redeploying…`,
+        `Updating ${targets.length} image${targets.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
       );
       setSelected(new Set());
       await checkUpdates();
+      // Cleared by the updates:changed event; never spin forever.
+      window.setTimeout(() => setApplyingImages(new Set()), 180_000);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Update failed.");
-    } finally {
       setApplyingImages(new Set());
     }
   }
@@ -149,7 +158,12 @@ export default function Updates() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {note && <span className="text-xs text-zinc-500">{note}</span>}
+          {note && (
+            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+              {busy && <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />}
+              {note}
+            </span>
+          )}
           <button
             onClick={onCheck}
             disabled={checking}
@@ -329,7 +343,7 @@ function UpdateRow({
 }) {
   return (
     <li className="rounded-lg border border-zinc-800 bg-zinc-900/40">
-      <div className="flex items-center gap-2 pr-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pr-3">
       {selectable && (
         <input
           type="checkbox"
@@ -342,12 +356,12 @@ function UpdateRow({
       )}
       <button
         onClick={onToggle}
-        className="flex flex-1 items-center gap-3 px-4 py-2.5 text-left"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-left"
       >
         <span className="text-zinc-500" aria-hidden>
           {open ? "▾" : "▸"}
         </span>
-        <span className="min-w-0 shrink truncate font-mono text-sm text-zinc-200">
+        <span className="min-w-0 max-w-full shrink truncate font-mono text-sm text-zinc-200">
           {entry.image}
         </span>
         <span
@@ -359,7 +373,7 @@ function UpdateRow({
         <span className="min-w-0 flex-1" />
 
         {entry.hasUpdate && entry.kind === "semver" && (
-          <span className="flex items-center gap-2 text-xs">
+          <span className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-zinc-500">{entry.current}</span>
             <span className="text-zinc-600">→</span>
             <span className="font-medium text-zinc-100">{entry.candidate}</span>
@@ -383,8 +397,9 @@ function UpdateRow({
           <button
             onClick={onApply}
             disabled={applying || disabled}
-            className="shrink-0 rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
           >
+            {applying && <SpinnerIcon className="h-3 w-3" />}
             {applying ? "Updating…" : "Update & redeploy"}
           </button>
         )}

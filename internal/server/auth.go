@@ -192,6 +192,10 @@ func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
 	// matched via response timing.
 	passwordOK := auth.CheckPassword(hash, password)
 	if username != user || !passwordOK {
+		// Flat delay on failure: with a single admin account this is a simple,
+		// state-free brute-force damper (~2.5 attempts/sec/connection at most,
+		// on top of bcrypt's own cost).
+		time.Sleep(400 * time.Millisecond)
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}

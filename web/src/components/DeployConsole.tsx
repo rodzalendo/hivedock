@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { runStackAction, type StackAction } from "../api";
-import {
-  ChevronsDownIcon,
-  DownloadIcon,
-  PlayIcon,
-  RestartIcon,
-  StopIcon,
-} from "./icons";
+import { DownloadIcon, PlayIcon, RestartIcon, StopIcon } from "./icons";
 
 interface DeployMessage {
   type: string;
@@ -26,7 +20,6 @@ const actions: {
   id: StackAction;
   label: string;
   title: string;
-  danger?: boolean;
   Icon: (p: { className?: string }) => JSX.Element;
 }[] = [
   {
@@ -56,14 +49,8 @@ const actions: {
       "docker compose stop — stop the containers but keep them (start again with Deploy).",
     Icon: StopIcon,
   },
-  {
-    id: "down",
-    label: "Down",
-    title:
-      "docker compose down — stop AND remove the containers and the stack's network. Your compose file and named volumes are kept; the stack shows as stopped until you Deploy again.",
-    danger: true,
-    Icon: ChevronsDownIcon,
-  },
+  // "down" (stop AND remove containers) was dropped from the UI: Stop covers
+  // pausing, and Delete covers removal. The backend action remains available.
 ];
 
 // DeployConsole renders the lifecycle action buttons for a managed stack plus a
@@ -111,9 +98,6 @@ export default function DeployConsole({ stack }: { stack: string }) {
 
   async function trigger(a: StackAction) {
     if (phase === "running") return;
-    if (a === "down" && !window.confirm(`Stop and remove all containers in "${stack}"?`)) {
-      return;
-    }
     setPhase("running");
     setAction(a);
     setLines([]);
@@ -141,9 +125,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
               a.id === "up"
                 ? "bg-accent-600 text-zinc-950 hover:bg-accent-500"
-                : a.danger
-                  ? "border border-red-500/30 text-red-400 hover:bg-red-500/10"
-                  : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
             }`}
           >
             <a.Icon className="h-3.5 w-3.5" />

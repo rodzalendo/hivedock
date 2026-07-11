@@ -37,6 +37,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
+	r.Use(securityHeaders)
 
 	// The update checker uses the Docker client (nil-safe) for local image
 	// digests + changelog source labels on the mutable-tag path.
@@ -84,6 +85,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Post("/updates/check", api.checkUpdates)
 			r.Put("/updates/ignore", api.setIgnore)
 			r.Get("/home", api.listHome)
+			r.Get("/home/layout", api.getHomeLayout)
+			r.Put("/home/layout", api.putHomeLayout)
 			r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
 			r.Put("/home/{stack}/{service}/icon", api.setIcon)
 			r.Get("/icons/{slug}", api.icon)
@@ -144,6 +147,25 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// securityHeaders sets baseline browser protections on every response. The CSP
+// is intentionally permissive enough for the embedded SPA (inline styles via
+// Tailwind's generated CSS are fine; no inline scripts are used) while blocking
+// framing, MIME sniffing, and cross-origin embedding of the UI.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		// img-src allows https + data for user-set custom icon URLs; connect-src
+		// 'self' covers the API + WebSocket (ws: is same-origin via 'self').
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; "+
+				"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requestLogger is a small slog-backed access logger (chi's default logger

@@ -1,14 +1,33 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchHome,
+  fetchHomeLayout,
+  saveHomeLayout,
   setServiceVisibility,
   setServiceIcon,
   type HomeEntry,
+  type HomeLayout,
 } from "../api";
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
 import { EyeIcon, EyeOffIcon, ImageIcon } from "../components/icons";
+
+// Group columns on wider screens; small screens always stack to one column.
+const columnsClass: Record<number, string> = {
+  1: "columns-1",
+  2: "columns-1 sm:columns-2",
+  3: "columns-1 sm:columns-2 xl:columns-3",
+  4: "columns-1 sm:columns-2 lg:columns-3 xl:columns-4",
+};
+
+// statusRank orders cards when sorting by status: running first, stopped
+// middle, absent last; ties break alphabetically.
+function statusRank(status: string): number {
+  if (status === "running") return 0;
+  if (status === "absent") return 2;
+  return 1;
+}
 
 export default function Dashboard() {
   const { data, isLoading, isError, error } = useQuery({
@@ -16,8 +35,22 @@ export default function Dashboard() {
     queryFn: fetchHome,
     refetchInterval: 30_000,
   });
+  const { data: savedLayout } = useQuery({
+    queryKey: ["home-layout"],
+    queryFn: fetchHomeLayout,
+    staleTime: 60_000,
+  });
+  const qc = useQueryClient();
+
   const [search, setSearch] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+
+  // Customize mode edits a draft copy; Save persists it, Cancel discards.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<HomeLayout>({});
+  const [saving, setSaving] = useState(false);
+  const layout: HomeLayout = editing ? draft : (savedLayout ?? {});
+  const columns = Math.min(4, Math.max(1, layout.columns ?? 3));
 
   const entries = useMemo(() => data ?? [], [data]);
   const filtered = useMemo(() => {
@@ -33,7 +66,75 @@ export default function Dashboard() {
     });
   }, [entries, search, showHidden]);
 
+  // Group, sort within groups, then order the groups per the layout.
+  const groups = useMemo(() => {
+    const map = new Map<string, HomeEntry[]>();
+    for (const e of filtered) {
+      const arr = map.get(e.group) ?? [];
+      arr.push(e);
+      map.set(e.group, arr);
+    }
+    const bySort =
+      layout.sort === "status"
+        ? (a: HomeEntry, b: HomeEntry) =>
+            statusRank(a.status) - statusRank(b.status) ||
+            a.name.localeCompare(b.name)
+        : (a: HomeEntry, b: HomeEntry) => a.name.localeCompare(b.name);
+    for (const arr of map.values()) arr.sort(bySort);
+
+    const order = layout.groupOrder ?? [];
+    const keys = [...map.keys()].sort((a, b) => {
+      const ia = order.indexOf(a);
+      const ib = order.indexOf(b);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.localeCompare(b);
+    });
+    return keys.map((k) => [k, map.get(k)!] as const);
+  }, [filtered, layout.sort, layout.groupOrder]);
+
   const hiddenCount = entries.filter((e) => e.hidden).length;
+
+  function startEdit() {
+    setDraft({
+      columns,
+      sort: layout.sort ?? "name",
+      groupTitles: { ...(savedLayout?.groupTitles ?? {}) },
+      // Seed the order with what's currently displayed so dragging starts
+      // from a complete list.
+      groupOrder: groups.map(([k]) => k),
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setSaving(true);
+    try {
+      await saveHomeLayout(draft);
+      await qc.invalidateQueries({ queryKey: ["home-layout"] });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // HTML5 drag-and-drop group reordering (edit mode only).
+  const dragFrom = useRef<string | null>(null);
+  function dropOn(target: string) {
+    const from = dragFrom.current;
+    dragFrom.current = null;
+    if (!from || from === target) return;
+    setDraft((d) => {
+      const order = [...(d.groupOrder ?? [])];
+      const fi = order.indexOf(from);
+      const ti = order.indexOf(target);
+      if (fi < 0 || ti < 0) return d;
+      order.splice(fi, 1);
+      order.splice(ti, 0, from);
+      return { ...d, groupOrder: order };
+    });
+  }
 
   return (
     <div className="space-y-5">
@@ -57,7 +158,75 @@ export default function Dashboard() {
             Show hidden ({hiddenCount})
           </label>
         )}
+
+        <span className="flex-1" />
+
+        {editing ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <label className="flex items-center gap-1.5 text-zinc-400">
+              Columns
+              <select
+                value={columns}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, columns: Number(e.target.value) }))
+                }
+                className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              >
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-zinc-400">
+              Sort by
+              <select
+                value={draft.sort ?? "name"}
+                onChange={(e) =>
+                  setDraft((d) => ({
+                    ...d,
+                    sort: e.target.value as HomeLayout["sort"],
+                  }))
+                }
+                className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+              >
+                <option value="name">name</option>
+                <option value="status">status</option>
+              </select>
+            </label>
+            <button
+              onClick={saveEdit}
+              disabled={saving}
+              className="rounded-lg bg-accent-600 px-3 py-1.5 font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save layout"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              className="rounded-lg px-2 py-1.5 text-zinc-400 hover:text-zinc-200"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={startEdit}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-800"
+            title="Arrange groups: columns, order (drag & drop), titles, sorting"
+          >
+            Customize
+          </button>
+        )}
       </div>
+
+      {editing && (
+        <p className="text-xs text-zinc-500">
+          Drag groups to reorder them, click a title to rename it, then Save
+          layout.
+        </p>
+      )}
 
       {isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
       {isError && (
@@ -71,10 +240,53 @@ export default function Dashboard() {
         </div>
       )}
 
-      {filtered.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {filtered.map((e) => (
-            <Card key={`${e.stack}/${e.service}`} entry={e} />
+      {groups.length > 0 && (
+        <div className={`${columnsClass[columns]} gap-4`}>
+          {groups.map(([key, items]) => (
+            <section
+              key={key}
+              draggable={editing}
+              onDragStart={() => (dragFrom.current = key)}
+              onDragOver={(e) => editing && e.preventDefault()}
+              onDrop={() => editing && dropOn(key)}
+              className={`mb-4 break-inside-avoid ${
+                editing
+                  ? "cursor-grab rounded-xl border border-dashed border-zinc-700 bg-zinc-900/30 p-3"
+                  : ""
+              }`}
+            >
+              <div className="mb-2 flex items-center gap-2">
+                {editing && (
+                  <span className="select-none text-zinc-600" aria-hidden>
+                    ⠿
+                  </span>
+                )}
+                {editing ? (
+                  <input
+                    value={draft.groupTitles?.[key] ?? key}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        groupTitles: {
+                          ...(d.groupTitles ?? {}),
+                          [key]: e.target.value,
+                        },
+                      }))
+                    }
+                    className="w-40 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-300 outline-none focus:border-accent-500"
+                  />
+                ) : (
+                  <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+                    {layout.groupTitles?.[key]?.trim() || key}
+                  </h3>
+                )}
+              </div>
+              <div className="space-y-2">
+                {items.map((e) => (
+                  <Card key={`${e.stack}/${e.service}`} entry={e} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

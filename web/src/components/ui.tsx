@@ -118,7 +118,7 @@ export function OriginBadge({ origin }: { origin: Origin }) {
       title={
         managed
           ? "Defined by a compose file in your stacks directory"
-          : "Running but not managed by Hivedock — read-only"
+          : "Running but not managed by HiveDock — read-only"
       }
     >
       {origin}

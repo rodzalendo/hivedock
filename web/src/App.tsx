@@ -48,7 +48,9 @@ export default function App() {
     queryFn: fetchUpdates,
     staleTime: 30_000,
   });
-  const updateCount = updates?.filter((u) => u.hasUpdate).length ?? 0;
+  // Ignored (keep-pinned) updates don't count toward the badge.
+  const updateCount =
+    updates?.filter((u) => u.hasUpdate && !u.ignored).length ?? 0;
 
   async function handleLogout() {
     try {

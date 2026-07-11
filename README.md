@@ -1,26 +1,36 @@
-# 🐝 Hivedock
+<p align="center">
+  <img src="web/public/favicon.svg" width="72" alt="HiveDock logo" />
+</p>
 
-**One container to run your homelab’s Docker: manage compose stacks, get a
-zero-config dashboard, and check for image updates.** Dockge-style stack
-management + a Homepage-style auto-discovered dashboard + WUD-style update
-checking — in a single Go binary, no database server, no agents.
+<h1 align="center">HiveDock</h1>
 
-- **Stacks** — see every compose stack (and stray `docker run` containers),
-  edit the compose file and `.env` in-browser, and deploy/stop/restart/pull with
-  live streamed output. External stacks are shown read-only; drift is surfaced.
-- **Home** — a zero-config dashboard. Cards, icons, and links are auto-derived
-  from your compose files; legacy `homepage.*` labels are honored for migration.
-- **Updates** — checks Docker Hub / ghcr / lscr / quay for newer image tags
-  (semver-aware) and digest changes for mutable tags, then rewrites the tag in
-  your compose file (comments preserved) and redeploys — one click.
+<p align="center"><b>One container for your homelab's Docker: compose stack management, a zero-config app dashboard, and trustworthy image update checking. A single small binary.</b></p>
 
-> Compose files are always the source of truth. Hivedock’s SQLite holds only app
-> state (settings, UI prefs, cached update results) — never your stack
-> definitions. Point it at an existing `/opt/stacks` and it just works.
+![Home dashboard](docs/screenshots/home.png)
 
-## 60-second install
+## Why HiveDock
 
-Create a `compose.yaml` and `docker compose up -d`:
+Most homelabs end up running three separate tools: one to manage compose stacks, one as a start page with app tiles, and one to watch for image updates. HiveDock does all three in one container, and does a few things you will not find elsewhere:
+
+- **Zero-config dashboard.** No YAML to write for your start page. Cards, icons, links, and groups are derived from the compose files and containers you already have. Databases and sidecars auto-hide, and you can override anything per card (icon, visibility, group layout).
+- **Update suggestions you can trust.** The version engine only proposes tags on the same track as yours (same prefix, suffix, and shape), and cross-checks the candidate's build date against your current image, so a stale legacy tag can never masquerade as an update. Deliberately pinned versions can be ignored per image, so a bulk update never overwrites your choice.
+- **Your files stay the source of truth.** Stack definitions are never copied into a database. HiveDock reads the compose files in your stacks directory, and when it updates a tag it rewrites just that line, preserving comments and formatting. Point it at an existing stacks directory and it works immediately; nothing is ever locked in.
+- **Honest about ownership.** Stacks it did not create (external compose projects, plain `docker run` containers) are shown read-only and clearly labeled. Config drift between a running container and its file is detected and explained in plain language.
+
+## Features
+
+- **Stacks**: every compose stack and stray container in one list, in-browser compose and `.env` editing with server-side validation, deploy / pull / restart / stop with live streamed output, rename and delete with running-state guards, per-service logs, drift detection.
+- **Home**: auto-discovered app grid with icons (dashboard-icons plus custom icon URLs), clickable port links, hide/show per card, groups with custom titles, drag-and-drop arrangement, column count, and name/status sorting.
+- **Updates**: semver-aware tag checking across Docker Hub, ghcr, lscr, and quay, digest checking for `latest`-style tags, one-click update and redeploy (single or bulk), per-image ignore for pinned versions, webhook notifications when new updates appear.
+- **Ops**: single binary with embedded UI, SQLite for app state only, WebSocket live updates, session auth with CSRF protection, multi-arch images (amd64 and arm64), works in Docker-in-LXC.
+
+![Stacks view](docs/screenshots/stacks.png)
+
+![Updates view](docs/screenshots/updates.png)
+
+## Install
+
+Create a `compose.yaml` and run `docker compose up -d`:
 
 ```yaml
 services:
@@ -32,78 +42,65 @@ services:
       - "5001:5001"
     environment:
       # STACKS_DIR must resolve to the SAME path inside and outside the
-      # container — mount it 1:1 (see the volume below).
+      # container. Mount it 1:1 (see volumes below).
       - STACKS_DIR=/opt/stacks
       - DATA_DIR=/app/data
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
       - /opt/stacks:/opt/stacks
-      - hivedock-data:/app/data
-
-volumes:
-  hivedock-data:
 ```
 
-Then open **http://<your-host>:5001** and create the admin account on the
-first-run screen. That’s it — your existing stacks under `/opt/stacks` show up
-immediately.
+Open `http://<your-host>:5001` and create the admin account on the first-run screen. Your existing stacks show up immediately.
 
-Multi-arch images (`amd64`, `arm64`) are published to
-`ghcr.io/rodzalendo/hivedock` — works on a Pi or an x86 box alike.
+## Configuration
 
-> First pull failing with `unauthorized`/`denied`? A GHCR package starts
-> **private**. After the first successful build, make it public
-> (GitHub → the repo’s **Packages** → `hivedock` → **Package settings** →
-> *Change visibility → Public*), or `docker login ghcr.io` on the host with a
-> read-scoped token.
+Everything is configured with environment variables:
 
-## Configuration (env)
-
-| Var | Default | Meaning |
+| Variable | Default | What it does |
 |---|---|---|
-| `PORT` | `5001` | HTTP listen port |
-| `STACKS_DIR` | `./dev-stacks` | Directory scanned for compose stacks. **Must resolve to the same path inside and outside the container.** |
-| `DATA_DIR` | `./data` | SQLite + app state (cached icons, update results) |
-| `AUTH_DISABLED` | `false` | Bypass login — trusted LAN only |
-| `PUBLIC_HOST` | _(request host)_ | Host used to build dashboard links (set to a static IP/hostname so links don’t rot) |
-| `CHECK_INTERVAL` | `6h` | How often to auto-check for image updates (`0`/`off` disables; use “Check now” anytime) |
-| `WEBHOOK_URL` | _(none)_ | POSTed a JSON payload when **new** updates are found (also editable in Settings) |
-| `LOG_LEVEL` | `info` | `debug`\|`info`\|`warn`\|`error` |
+| `PORT` | `5001` | HTTP listen port. |
+| `STACKS_DIR` | `/opt/stacks` | Directory scanned for `<stack>/compose.yaml`. Must be the same path inside and outside the container. |
+| `DATA_DIR` | `/app/data` | SQLite, icon cache, app state. |
+| `AUTH_DISABLED` | `false` | Skip login entirely. Only for trusted LANs. |
+| `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links do not rot. |
+| `CHECK_INTERVAL` | `6h` | Periodic update check cadence. `off` disables it; "Check now" always works. |
+| `WEBHOOK_URL` | unset | POSTed a JSON payload when new updates are found. Also editable in Settings. |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
-### Auth & CSRF
+### Auth
 
-A single admin account (bcrypt) is created on first run; sessions are a
-HttpOnly cookie and survive restarts. Every mutating request is CSRF-protected.
-`AUTH_DISABLED=true` skips all of this for trusted LAN test environments.
+A single admin account (bcrypt) is created on first run. Sessions are an HttpOnly cookie and survive restarts; every mutating request is CSRF-protected and login failures are rate-damped. `AUTH_DISABLED=true` skips all of it for trusted LAN setups.
 
 ### Reverse proxy / HTTPS
 
-Front Hivedock with your proxy of choice and forward `X-Forwarded-Proto` so the
-session cookie is marked `Secure` over HTTPS. The WebSocket at `/api/ws` needs
-upgrade headers passed through.
+Front HiveDock with your proxy of choice and forward `X-Forwarded-Proto`, so the session cookie is marked `Secure` over HTTPS. The WebSocket at `/api/ws` needs upgrade headers passed through.
 
-## Migrating
+### Labels (optional)
 
-- **From Dockge** — point `STACKS_DIR` at the same stacks directory Dockge used
-  (e.g. `/opt/stacks`). Hivedock reads the same compose files in place; nothing
-  is moved or rewritten on import. Your stacks appear as *managed* and are fully
-  editable/deployable.
-- **From Homepage** — no `services.yaml` needed. Cards are auto-discovered, but
-  your existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`,
-  `.href`) are read as-is, so a labeled stack keeps its identity. Override any
-  attribute with the primary `hivedock.*` labels.
-- **From What’s Up Docker (WUD)** — the Updates tab replaces it: semver
-  candidate selection (prefix/suffix/part-count preservation, signature-tag
-  exclusion) plus a digest path for `latest`-style tags, with a webhook on new
-  updates. Env-interpolated tags (`image: app:${TAG}`) are surfaced as
-  “managed via .env”, never silently rewritten.
+The dashboard needs no labels, but you can override any card:
 
-## How it works
+```yaml
+services:
+  app:
+    image: ghcr.io/example/app:1.2.3
+    labels:
+      hivedock.name: My App
+      hivedock.group: Media
+      hivedock.icon: jellyfin        # dashboard-icons slug or a full image URL
+      hivedock.url: https://app.lan
+      hivedock.hidden: "true"
+```
 
-Single Go binary (chi HTTP + one multiplexed WebSocket), the Docker SDK for
-reads, and subprocess `docker compose` for mutations. The React SPA is embedded
-via `go:embed`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design
-of record and [docs/PRD.md](docs/PRD.md) for what/why.
+Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.description`) are also read as-is, so a labeled stack keeps its identity with zero migration work.
+
+## How it is built
+
+A Go backend (chi router, Docker SDK for reads, `docker compose` subprocess for mutations) with an embedded React + Tailwind frontend, compiled into one static binary in a multi-stage Docker build. SQLite (pure Go driver, no CGO) stores only app state: settings, UI preferences, cached update results. Stack definitions live exclusively in your compose files.
+
+The entire codebase was written with [Claude](https://claude.com): architecture, backend, frontend, tests, and CI, end to end.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of record and [docs/PRD.md](docs/PRD.md) for the product spec.
 
 ## Development
 
@@ -113,19 +110,14 @@ Prereqs: Go 1.23+, Node 20+, Docker, and [Task](https://taskfile.dev).
 task fixture   # create sample stacks in ./dev-stacks
 task dev       # vite (:5173) proxying to the Go server (:5001)
 task test      # go test + vitest
-task build     # multi-stage image (vite build → go build → alpine)
+task build     # multi-stage image (vite build -> go build -> alpine)
 ```
 
-No local Go? Build/test in a container:
+No local Go? Build and test in a container:
 
 ```sh
 docker run --rm -v "$PWD:/src" -w /src -e CGO_ENABLED=0 golang:1.23-alpine \
   sh -c "go test ./internal/... ./cmd/..."
 ```
 
-See [docs/CLAUDE.md](docs/CLAUDE.md) for the non-negotiable invariants and
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Proxmox/LXC deployment notes.
-
-## License
-
-See [LICENSE](LICENSE).
+See [docs/CLAUDE.md](docs/CLAUDE.md) for the non-negotiable invariants and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Proxmox/LXC deployment notes.

@@ -186,6 +186,22 @@ export function ChevronsDownIcon({ className }: IconProps) {
   );
 }
 
+export function SpinnerIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={`animate-spin ${className ?? ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      aria-hidden
+    >
+      <path d="M14 8a6 6 0 1 1-6-6" />
+    </svg>
+  );
+}
+
 export function PencilIcon({ className }: IconProps) {
   return (
     <svg

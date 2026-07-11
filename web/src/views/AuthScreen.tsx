@@ -51,7 +51,7 @@ export default function AuthScreen({
           <span className="text-2xl" aria-hidden>
             🐝
           </span>
-          <span className="text-lg font-semibold tracking-tight">Hivedock</span>
+          <span className="text-lg font-semibold tracking-tight">HiveDock</span>
         </div>
 
         <h1 className="mb-1 text-base font-medium">
