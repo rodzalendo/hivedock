@@ -3,9 +3,24 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
 }
 
 body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+  @apply bg-zinc-950 font-sans text-zinc-200 antialiased;
+  font-size: 13px;
+}
+
+/* Cool-gray scrollbars to match the design. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #242a33;
+  border-radius: 6px;
+  border: 2px solid #101216;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

@@ -192,12 +192,12 @@ function NewStack({
         onChange={(e) => setName(e.target.value)}
         placeholder="stack-name"
         onKeyDown={(e) => e.key === "Escape" && reset()}
-        className="w-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs outline-none focus:border-hive-500"
+        className="w-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs outline-none focus:border-accent-500"
       />
       <button
         type="submit"
         disabled={busy}
-        className="rounded-md bg-hive-600 px-2 py-1 text-xs font-medium text-white transition hover:bg-hive-500 disabled:opacity-40"
+        className="rounded-md bg-accent-600 px-2 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
       >
         Create
       </button>
@@ -246,7 +246,7 @@ function StackRow({
         onClick={onClick}
         className={`flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition ${
           active
-            ? "border-hive-600/50 bg-zinc-800/60"
+            ? "border-accent-500/40 bg-zinc-800/60"
             : "border-transparent hover:bg-zinc-900"
         }`}
       >

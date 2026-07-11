@@ -144,7 +144,7 @@ export default function Updates() {
           <button
             onClick={onCheck}
             disabled={checking}
-            className="rounded-lg bg-hive-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-50"
           >
             {checking ? "Checking…" : "Check now"}
           </button>
@@ -178,7 +178,7 @@ export default function Updates() {
                     checked={allSelected}
                     onChange={toggleSelectAll}
                     disabled={busy}
-                    className="accent-hive-500"
+                    className="accent-accent-500"
                   />
                   Select all
                 </label>
@@ -194,7 +194,7 @@ export default function Updates() {
                 <button
                   onClick={() => applyMany(applicable)}
                   disabled={busy}
-                  className="rounded-lg bg-hive-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
+                  className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
                 >
                   {busy ? "Updating…" : `Update all (${applicable.length})`}
                 </button>
@@ -301,7 +301,7 @@ function UpdateRow({
           onChange={onCheck}
           disabled={disabled}
           aria-label={`Select ${entry.image}`}
-          className="ml-3 accent-hive-500"
+          className="ml-3 accent-accent-500"
         />
       )}
       <button
@@ -344,7 +344,7 @@ function UpdateRow({
           <button
             onClick={onApply}
             disabled={applying || disabled}
-            className="shrink-0 rounded-lg bg-hive-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
+            className="shrink-0 rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
           >
             {applying ? "Updating…" : "Update & redeploy"}
           </button>
@@ -363,7 +363,7 @@ function UpdateRow({
                 href={entry.source}
                 target="_blank"
                 rel="noreferrer"
-                className="text-hive-500 hover:underline"
+                className="text-accent-500 hover:underline"
               >
                 Changelog / source ↗
               </a>

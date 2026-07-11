@@ -48,7 +48,7 @@ export default function LogsPanel({
             type="checkbox"
             checked={follow}
             onChange={(e) => setFollow(e.target.checked)}
-            className="accent-hive-500"
+            className="accent-accent-500"
           />
           Follow
         </label>

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchHome, setServiceVisibility, type HomeEntry } from "../api";
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
+import { EyeIcon, EyeOffIcon } from "../components/icons";
 
 export default function Dashboard() {
   const { data, isLoading, isError, error } = useQuery({
@@ -39,7 +40,7 @@ export default function Dashboard() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search apps…"
-          className="w-56 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:border-hive-600 focus:outline-none"
+          className="w-56 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:border-accent-500 focus:outline-none"
         />
         {hiddenCount > 0 && (
           <label className="flex items-center gap-1.5 text-xs text-zinc-400">
@@ -47,7 +48,7 @@ export default function Dashboard() {
               type="checkbox"
               checked={showHidden}
               onChange={(e) => setShowHidden(e.target.checked)}
-              className="accent-hive-500"
+              className="accent-accent-500"
             />
             Show hidden ({hiddenCount})
           </label>
@@ -154,10 +155,16 @@ function Card({ entry }: { entry: HomeEntry }) {
         )}
         <button
           onClick={() => toggleHidden.mutate()}
-          className="rounded px-1.5 py-1 text-xs text-zinc-600 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-300 group-hover:opacity-100"
+          className={`rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300 ${
+            entry.hidden ? "" : "opacity-0 group-hover:opacity-100"
+          }`}
           title={entry.hidden ? "Show on dashboard" : "Hide from dashboard"}
         >
-          {entry.hidden ? "🙈" : "👁"}
+          {entry.hidden ? (
+            <EyeOffIcon className="h-4 w-4" />
+          ) : (
+            <EyeIcon className="h-4 w-4" />
+          )}
         </button>
       </div>
     </div>

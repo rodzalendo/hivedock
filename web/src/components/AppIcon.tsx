@@ -1,15 +1,14 @@
 import { useState } from "react";
 import type { HomeEntry } from "../api";
 
+// Muted per-service tile colors from the Hivedock design mock.
 const avatarColors = [
-  "bg-sky-600",
-  "bg-emerald-600",
-  "bg-violet-600",
-  "bg-amber-600",
-  "bg-pink-600",
-  "bg-teal-600",
-  "bg-indigo-600",
-  "bg-rose-600",
+  "#a08ad6",
+  "#7fa9dd",
+  "#d9a95c",
+  "#d87f7a",
+  "#6fc3c9",
+  "#8fbf7a",
 ];
 
 function hashColor(s: string): string {
@@ -28,10 +27,17 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
   const showLetter = failed || !src;
 
   if (showLetter) {
+    const c = hashColor(entry.name);
     return (
       <div
-        className={`flex shrink-0 items-center justify-center rounded-lg font-semibold text-white ${hashColor(entry.name)}`}
-        style={{ width: size, height: size, fontSize: size * 0.45 }}
+        className="flex shrink-0 items-center justify-center rounded-[7px] font-mono font-semibold"
+        style={{
+          width: size,
+          height: size,
+          fontSize: size * 0.42,
+          background: `${c}24`,
+          color: c,
+        }}
         aria-hidden
       >
         {entry.name.trim().charAt(0).toUpperCase() || "?"}
@@ -45,7 +51,7 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
       alt=""
       width={size}
       height={size}
-      className="shrink-0 rounded-lg object-contain"
+      className="shrink-0 rounded-[7px] object-contain"
       style={{ width: size, height: size }}
       onError={() => setFailed(true)}
     />

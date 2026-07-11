@@ -43,7 +43,7 @@ export default function HostStrip() {
 function Meter({ label, pct, text }: { label: string; pct: number; text: string }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color =
-    clamped > 85 ? "bg-red-500" : clamped > 60 ? "bg-amber-500" : "bg-hive-500";
+    clamped > 85 ? "bg-red-500" : clamped > 60 ? "bg-hive-500" : "bg-zinc-500";
   return (
     <div className="flex items-center gap-2">
       <span className="text-zinc-500">{label}</span>

@@ -98,7 +98,7 @@ test("renders the home dashboard by default", async () => {
   mockApi();
   renderApp();
 
-  expect(screen.getByText("Hivedock")).toBeInTheDocument();
+  expect(screen.getByText("hivedock")).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText("Jellyfin")).toBeInTheDocument());
   expect(screen.getByText("Media")).toBeInTheDocument();
 });

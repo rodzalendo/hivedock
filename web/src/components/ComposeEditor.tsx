@@ -113,7 +113,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
         <button
           onClick={onSave}
           disabled={busy || !dirty}
-          className="rounded-lg bg-hive-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-hive-500 disabled:opacity-40"
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
         >
           Save
         </button>

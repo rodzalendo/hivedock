@@ -96,7 +96,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             disabled={running}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
               a.id === "up"
-                ? "bg-hive-600 text-white hover:bg-hive-500"
+                ? "bg-accent-600 text-zinc-950 hover:bg-accent-500"
                 : a.danger
                   ? "border border-red-500/30 text-red-400 hover:bg-red-500/10"
                   : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"

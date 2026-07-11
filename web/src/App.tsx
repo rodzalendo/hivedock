@@ -7,15 +7,27 @@ import Updates from "./views/Updates";
 import Settings from "./views/Settings";
 import { useLiveUpdates } from "./useLiveUpdates";
 import { fetchAuthStatus, fetchUpdates, logout, type AuthStatus } from "./api";
+import {
+  LogoMark,
+  HomeIcon,
+  StacksIcon,
+  UpdatesIcon,
+  StatusIcon,
+  SettingsIcon,
+} from "./components/icons";
 
 type View = "home" | "stacks" | "updates" | "status" | "settings";
 
-const nav: { id: View; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: "▦" },
-  { id: "stacks", label: "Stacks", icon: "▤" },
-  { id: "updates", label: "Updates", icon: "↑" },
-  { id: "status", label: "Status", icon: "◉" },
-  { id: "settings", label: "Settings", icon: "⚙" },
+const nav: {
+  id: View;
+  label: string;
+  Icon: (p: { className?: string }) => JSX.Element;
+}[] = [
+  { id: "home", label: "Home", Icon: HomeIcon },
+  { id: "stacks", label: "Stacks", Icon: StacksIcon },
+  { id: "updates", label: "Updates", Icon: UpdatesIcon },
+  { id: "status", label: "Status", Icon: StatusIcon },
+  { id: "settings", label: "Settings", Icon: SettingsIcon },
 ];
 
 export default function App() {
@@ -49,34 +61,32 @@ export default function App() {
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 md:flex-row">
       <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
         <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 md:border-b-0 md:py-4">
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-xl" aria-hidden>
-              🐝
+          <div className="flex items-center gap-2.5 px-1">
+            <LogoMark />
+            <span className="font-mono text-[14.5px] font-semibold tracking-[0.02em] text-zinc-50">
+              hivedock
             </span>
-            <span className="font-semibold tracking-tight">Hivedock</span>
           </div>
           <div className="md:hidden">
             <SessionControls auth={auth} onLogout={handleLogout} />
           </div>
         </div>
 
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:space-y-1 md:overflow-visible md:px-3 md:pb-0">
-          {nav.map((item) => (
+        <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:space-y-0.5 md:overflow-visible md:px-3 md:pb-0">
+          {nav.map(({ id, label, Icon }) => (
             <button
-              key={item.id}
-              onClick={() => setView(item.id)}
-              className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${
-                view === item.id
-                  ? "bg-zinc-800 text-zinc-100"
+              key={id}
+              onClick={() => setView(id)}
+              className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
+                view === id
+                  ? "bg-zinc-800 text-zinc-50"
                   : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
               }`}
             >
-              <span className="text-zinc-500" aria-hidden>
-                {item.icon}
-              </span>
-              {item.label}
-              {item.id === "updates" && updateCount > 0 && (
-                <span className="rounded-full bg-hive-600 px-1.5 py-0.5 text-[10px] font-semibold text-white md:ml-auto">
+              <Icon className="h-[15px] w-[15px] shrink-0" />
+              {label}
+              {id === "updates" && updateCount > 0 && (
+                <span className="rounded-full border border-hive-500/30 bg-hive-500/[0.14] px-1.5 py-0.5 font-mono text-[10.5px] font-medium leading-none text-hive-500 md:ml-auto">
                   {updateCount}
                 </span>
               )}

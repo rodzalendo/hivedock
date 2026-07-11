@@ -56,7 +56,7 @@ export default function Settings() {
             value={webhook}
             onChange={(e) => setWebhook(e.target.value)}
             placeholder="https://example.com/hook"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-hive-500"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-accent-500"
           />
         </label>
         <p className="mt-1.5 text-[11px] text-zinc-600">
@@ -67,7 +67,7 @@ export default function Settings() {
           <button
             onClick={onSave}
             disabled={busy}
-            className="rounded-lg bg-hive-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
+            className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
           >
             Save
           </button>
