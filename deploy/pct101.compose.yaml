@@ -1,0 +1,31 @@
+# PCT 101 — run Hivedock SIDE-BY-SIDE with Dockge against the REAL stacks,
+# to verify Hivedock shows the same things Dockge does. VIEW-ONLY: discovery
+# and all views are read-only; do NOT click deploy/update/edit until verified.
+#
+# First run:
+#   mkdir -p /opt/hivedock && cd /opt/hivedock
+#   # copy this file to ./compose.yaml, then:
+#   docker compose pull && docker compose up -d
+#   # open http://<pct101-ip>:5002   (Dockge stays on :5001)
+services:
+  hivedock:
+    image: ghcr.io/rodzalendo/hivedock:edge
+    container_name: hivedock
+    restart: unless-stopped
+    ports:
+      - "5002:5001"                 # 5002 to avoid Dockge's 5001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data            # Hivedock's own SQLite + icon cache (not your stacks)
+      # Point at Dockge's real stacks dir. Same path in and out — required.
+      # Change /opt/stacks if your Dockge uses a different DOCKGE_STACKS_DIR.
+      - /opt/stacks:/opt/stacks
+    environment:
+      - STACKS_DIR=/opt/stacks
+      - DATA_DIR=/app/data
+      - AUTH_DISABLED=true          # LAN test only; behind your firewall
+      - LOG_LEVEL=info
+      # Homepage card links are built from this. Set to how you reach the box.
+      - PUBLIC_HOST=<pct101-ip>:5002
+      # No registry calls on the first look; set to e.g. 6h once you trust it.
+      - CHECK_INTERVAL=off
