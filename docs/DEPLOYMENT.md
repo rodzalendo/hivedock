@@ -36,33 +36,39 @@ Record here once verified:
 
 Rule: Hivedock runs against `/opt/stacks-test` until it has proven, on this box, that (a) read-only views never mutate anything and (b) every mutation is scoped to the stack it targets. Flipping `STACKS_DIR` to the real directory is a deliberate, logged decision at the end of Phase 3, not a default.
 
-## Deploy loop (dev machine → PCT 102)
+## Two tracks: staging (local) vs. deploy (server pulls from GHCR)
 
-No registry round-trip during development. `task deploy` does:
+Development and deployment are decoupled through GitHub + GHCR — no `docker save`/`ssh load` round-trip.
 
+- **Staging = this machine (Docker Desktop).** Iterate with `task up` (or `docker compose up --build`), which builds `hivedock:dev` and serves `:5001` against `./dev-stacks`. This is the throwaway "working version" — try changes here before committing.
+- **Deploy = server pulls a published image.** Push to `main` → GitHub Actions builds a multi-arch image and publishes `ghcr.io/rodzalendo/hivedock:edge`. Tagging `vX.Y.Z` additionally publishes `:X.Y.Z`, `:X.Y`, and `:latest`. The server never builds — it only pulls.
+
+### One-time: make the GHCR package pullable
+
+GHCR packages start **private**. After the first Release workflow succeeds, either:
+
+- make it public — GitHub → repo → *Packages* → `hivedock` → *Package settings* → *Change visibility* → Public; **or**
+- keep it private and `docker login ghcr.io -u rodzalendo` on the server with a read-scoped PAT.
+
+### First deploy on PCT 102
+
+```bash
+ssh root@<pct-ip>
+mkdir -p /opt/hivedock && cd /opt/hivedock
+# copy deploy/pct102.compose.yaml from this repo to ./compose.yaml (scp, or paste)
+docker compose pull
+docker compose up -d
 ```
-task build                                    # local multi-arch not needed; build for PCT arch (amd64)
-docker save hivedock:dev | ssh root@<pct-ip> docker load
-ssh root@<pct-ip> "cd /opt/hivedock && docker compose up -d"
+
+`deploy/pct102.compose.yaml` already references `ghcr.io/rodzalendo/hivedock:edge`, mounts the socket, `./data`, and `/opt/stacks-test`, and sets `AUTH_DISABLED=true` (test env, behind LAN).
+
+### Subsequent updates
+
+```bash
+ssh root@<pct-ip> "cd /opt/hivedock && docker compose pull && docker compose up -d"
 ```
 
-Set `HIVEDOCK_DEPLOY_HOST` in `.env.local` for the Taskfile. First deploy: copy `deploy/pct102.compose.yaml` to `/opt/hivedock/compose.yaml` on the container:
-
-```yaml
-services:
-  hivedock:
-    image: hivedock:dev
-    restart: unless-stopped
-    ports:
-      - 5001:5001
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./data:/app/data
-      - /opt/stacks-test:/opt/stacks-test   # same path inside and out — required
-    environment:
-      - STACKS_DIR=/opt/stacks-test
-      - AUTH_DISABLED=true                  # test env only; behind LAN
-```
+Or set `HIVEDOCK_DEPLOY_HOST` in `.env.local` and run `task deploy` (which does exactly the above over SSH). For pinned releases, deploy a tag instead of `:edge` by editing the `image:` line to `:X.Y.Z`.
 
 ## Test stacks to seed on PCT 102
 

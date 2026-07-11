@@ -84,14 +84,14 @@ tasks:
       - docker compose down
 
   deploy:
-    desc: "Build amd64 image and load+run on PCT 102 (set HIVEDOCK_DEPLOY_HOST)"
+    desc: "Pull the latest GHCR image and (re)start on PCT 102 (set HIVEDOCK_DEPLOY_HOST)"
     preconditions:
       - sh: test -n "${HIVEDOCK_DEPLOY_HOST}"
         msg: "Set HIVEDOCK_DEPLOY_HOST in .env.local (see docs/DEPLOYMENT.md)"
     cmds:
-      - docker build --platform linux/amd64 -t {{.IMAGE}} --build-arg VERSION={{.VERSION | default "dev"}} .
-      - docker save {{.IMAGE}} | ssh root@${HIVEDOCK_DEPLOY_HOST} docker load
-      - ssh root@${HIVEDOCK_DEPLOY_HOST} "cd /opt/hivedock && docker compose up -d"
+      # Server pulls from ghcr.io/rodzalendo/hivedock — no local build/save/load.
+      # First deploy: copy deploy/pct102.compose.yaml to /opt/hivedock/compose.yaml first.
+      - ssh root@${HIVEDOCK_DEPLOY_HOST} "cd /opt/hivedock && docker compose pull && docker compose up -d"
 
   seed:
     desc: "Seed the 7 test stacks into /opt/stacks-test on PCT 102"
