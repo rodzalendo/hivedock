@@ -115,6 +115,114 @@ export function EyeIcon({ className }: IconProps) {
   );
 }
 
+export function PlayIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden>
+      <path d="M4.5 3.2c0-.9 1-1.5 1.8-1L13 6.7c.8.5.8 1.7 0 2.2l-6.7 4.4c-.8.5-1.8-.1-1.8-1V3.2Z" />
+    </svg>
+  );
+}
+
+export function DownloadIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M8 2.5v7" />
+      <path d="M5 7l3 3 3-3" />
+      <path d="M2.5 12.5h11" />
+    </svg>
+  );
+}
+
+export function RestartIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+      <path d="M13.5 2.5v2.6h-2.6" />
+    </svg>
+  );
+}
+
+export function StopIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} fill="currentColor" aria-hidden>
+      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+    </svg>
+  );
+}
+
+export function ChevronsDownIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 3.5L8 7.5l4-4" />
+      <path d="M4 8.5l4 4 4-4" />
+    </svg>
+  );
+}
+
+export function PencilIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M11.1 2.4a1.6 1.6 0 0 1 2.3 2.3l-7.8 7.8-3.1.8.8-3.1 7.8-7.8Z" />
+    </svg>
+  );
+}
+
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M2.5 4h11" />
+      <path d="M5.5 4V2.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V4" />
+      <path d="M12.5 4l-.6 8.7c0 .7-.6 1.3-1.3 1.3H5.4c-.7 0-1.3-.6-1.3-1.3L3.5 4" />
+      <path d="M6.5 7v4M9.5 7v4" />
+    </svg>
+  );
+}
+
 export function ImageIcon({ className }: IconProps) {
   return (
     <svg

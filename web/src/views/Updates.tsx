@@ -311,9 +311,16 @@ function UpdateRow({
         <span className="text-zinc-500" aria-hidden>
           {open ? "▾" : "▸"}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-sm text-zinc-200">
+        <span className="min-w-0 shrink truncate font-mono text-sm text-zinc-200">
           {entry.image}
         </span>
+        <span
+          className="hidden max-w-[14rem] shrink-0 truncate text-xs text-zinc-500 sm:inline"
+          title={entry.usedBy.map((u) => `${u.stack}/${u.service}`).join(", ")}
+        >
+          {usageLabel(entry.usedBy)}
+        </span>
+        <span className="min-w-0 flex-1" />
 
         {entry.hasUpdate && entry.kind === "semver" && (
           <span className="flex items-center gap-2 text-xs">
@@ -335,13 +342,6 @@ function UpdateRow({
           </span>
         )}
         {!entry.hasUpdate && <StatusChip entry={entry} />}
-
-        <span
-          className="ml-1 hidden max-w-[16rem] shrink-0 truncate text-xs text-zinc-500 sm:inline"
-          title={entry.usedBy.map((u) => `${u.stack}/${u.service}`).join(", ")}
-        >
-          {usageLabel(entry.usedBy)}
-        </span>
       </button>
         {onApply && (
           <button

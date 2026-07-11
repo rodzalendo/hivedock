@@ -77,6 +77,88 @@ func (c *Client) Digest(ctx context.Context, ref Ref) (string, error) {
 	return d, nil
 }
 
+// Created resolves the build timestamp of ref's repository at `tag` by walking
+// manifest → (index: first real platform manifest) → config blob `created`.
+// Used as a sanity check on semver candidates: a "newer" version tag whose
+// image was built long before the current one is a stale legacy tag (e.g.
+// linuxserver's old Ubuntu-era 20.04.1), not an update.
+func (c *Client) Created(ctx context.Context, ref Ref, tag string) (time.Time, error) {
+	man, err := c.fetchManifest(ctx, ref, tag)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Multi-arch index: descend into the first genuine platform manifest
+	// (attestation/provenance entries advertise architecture "unknown").
+	if len(man.Manifests) > 0 {
+		sub := ""
+		for _, m := range man.Manifests {
+			if m.Platform.Architecture != "" && m.Platform.Architecture != "unknown" {
+				sub = m.Digest
+				break
+			}
+		}
+		if sub == "" {
+			return time.Time{}, fmt.Errorf("index for %s:%s has no platform manifests", ref.Repo, tag)
+		}
+		if man, err = c.fetchManifest(ctx, ref, sub); err != nil {
+			return time.Time{}, err
+		}
+	}
+	if man.Config.Digest == "" {
+		return time.Time{}, fmt.Errorf("manifest for %s:%s has no config", ref.Repo, tag)
+	}
+
+	u := fmt.Sprintf("https://%s/v2/%s/blobs/%s", ref.Registry, ref.Repo, man.Config.Digest)
+	resp, err := c.doAuthed(ctx, http.MethodGet, ref, u, "application/json")
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, fmt.Errorf("config blob %s: %s", ref.Repo, resp.Status)
+	}
+	var cfg struct {
+		Created time.Time `json:"created"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
+		return time.Time{}, fmt.Errorf("decode config for %s:%s: %w", ref.Repo, tag, err)
+	}
+	return cfg.Created, nil
+}
+
+// manifestDoc is the union of an OCI/Docker image manifest and an index —
+// whichever fields are present tell us which one we got.
+type manifestDoc struct {
+	Manifests []struct {
+		Digest   string `json:"digest"`
+		Platform struct {
+			Architecture string `json:"architecture"`
+			OS           string `json:"os"`
+		} `json:"platform"`
+	} `json:"manifests"`
+	Config struct {
+		Digest string `json:"digest"`
+	} `json:"config"`
+}
+
+func (c *Client) fetchManifest(ctx context.Context, ref Ref, reference string) (manifestDoc, error) {
+	u := fmt.Sprintf("https://%s/v2/%s/manifests/%s", ref.Registry, ref.Repo, reference)
+	resp, err := c.doAuthed(ctx, http.MethodGet, ref, u, acceptManifests)
+	if err != nil {
+		return manifestDoc{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return manifestDoc{}, fmt.Errorf("manifest GET %s@%s: %s", ref.Repo, reference, resp.Status)
+	}
+	var doc manifestDoc
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return manifestDoc{}, fmt.Errorf("decode manifest %s@%s: %w", ref.Repo, reference, err)
+	}
+	return doc, nil
+}
+
 // Tags lists all tags for ref's repository, following v2 Link-header pagination.
 func (c *Client) Tags(ctx context.Context, ref Ref) ([]string, error) {
 	next := fmt.Sprintf("https://%s/v2/%s/tags/list?n=100", ref.Registry, ref.Repo)

@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rogalinski/hivedock/internal/registry"
 )
 
 type fakeReg struct {
-	tags    map[string][]string // repo -> tags
-	digests map[string]string   // repo -> remote digest
+	tags    map[string][]string  // repo -> tags
+	digests map[string]string    // repo -> remote digest
+	created map[string]time.Time // "repo:tag" -> build date (zero = unknown)
 	err     error
 }
 
@@ -26,6 +28,10 @@ func (f *fakeReg) Digest(_ context.Context, ref registry.Ref) (string, error) {
 		return "", f.err
 	}
 	return f.digests[ref.Repo], nil
+}
+
+func (f *fakeReg) Created(_ context.Context, ref registry.Ref, tag string) (time.Time, error) {
+	return f.created[ref.Repo+":"+tag], nil // zero time = unknown (fail-open)
 }
 
 type fakeLocal struct {
@@ -61,6 +67,68 @@ func TestCheckImageSemverUpToDate(t *testing.T) {
 	res := c.CheckImage(context.Background(), "nginx:1.27.0")
 	if res.Kind != KindUpToDate || res.HasUpdate {
 		t.Errorf("kind=%q hasUpdate=%v, want uptodate", res.Kind, res.HasUpdate)
+	}
+}
+
+// The real-world qBittorrent case: lscr.io kept a legacy Ubuntu-era "20.04.1"
+// tag (built 2021) that parses as numerically newer than the actual current
+// release 5.1.2 (built 2025). The build-date guard must reject it.
+func TestCheckImageRejectsStaleLegacyTag(t *testing.T) {
+	reg := &fakeReg{
+		tags: map[string][]string{"linuxserver/qbittorrent": {"5.1.2", "5.1.0", "20.04.1", "latest"}},
+		created: map[string]time.Time{
+			"linuxserver/qbittorrent:5.1.2":   time.Date(2025, 11, 16, 0, 0, 0, 0, time.UTC),
+			"linuxserver/qbittorrent:20.04.1": time.Date(2021, 11, 29, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	c := NewChecker(reg, nil, nil)
+
+	res := c.CheckImage(context.Background(), "lscr.io/linuxserver/qbittorrent:5.1.2")
+	if res.HasUpdate {
+		t.Fatalf("stale legacy tag surfaced as an update: candidate=%q", res.Candidate)
+	}
+	if res.Kind != KindUpToDate {
+		t.Errorf("kind=%q, want uptodate", res.Kind)
+	}
+}
+
+// A stale top candidate must not mask a genuinely newer release behind it.
+func TestCheckImageStaleTagFallsBackToNextCandidate(t *testing.T) {
+	reg := &fakeReg{
+		tags: map[string][]string{"linuxserver/qbittorrent": {"5.1.2", "5.2.0", "20.04.1"}},
+		created: map[string]time.Time{
+			"linuxserver/qbittorrent:5.1.2":   time.Date(2025, 11, 16, 0, 0, 0, 0, time.UTC),
+			"linuxserver/qbittorrent:5.2.0":   time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
+			"linuxserver/qbittorrent:20.04.1": time.Date(2021, 11, 29, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	c := NewChecker(reg, nil, nil)
+
+	res := c.CheckImage(context.Background(), "lscr.io/linuxserver/qbittorrent:5.1.2")
+	if !res.HasUpdate || res.Candidate != "5.2.0" {
+		t.Fatalf("candidate=%q hasUpdate=%v, want 5.2.0 after skipping stale 20.04.1", res.Candidate, res.HasUpdate)
+	}
+	if res.Diff != "minor" {
+		t.Errorf("diff=%q, want minor", res.Diff)
+	}
+}
+
+// A candidate slightly older than a freshly rebuilt current tag (security
+// rebuilds) stays within tolerance and is still offered.
+func TestCheckImageToleratesRecentRebuildSkew(t *testing.T) {
+	now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	reg := &fakeReg{
+		tags: map[string][]string{"library/app": {"1.2.3", "1.3.0"}},
+		created: map[string]time.Time{
+			"library/app:1.2.3": now,                      // rebuilt today
+			"library/app:1.3.0": now.Add(-20 * 24 * time.Hour), // released 20d ago
+		},
+	}
+	c := NewChecker(reg, nil, nil)
+
+	res := c.CheckImage(context.Background(), "app:1.2.3")
+	if !res.HasUpdate || res.Candidate != "1.3.0" {
+		t.Fatalf("candidate=%q hasUpdate=%v, want 1.3.0 within rebuild tolerance", res.Candidate, res.HasUpdate)
 	}
 }
 

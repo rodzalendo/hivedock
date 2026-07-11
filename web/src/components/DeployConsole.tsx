@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { runStackAction, type StackAction } from "../api";
+import {
+  ChevronsDownIcon,
+  DownloadIcon,
+  PlayIcon,
+  RestartIcon,
+  StopIcon,
+} from "./icons";
 
 interface DeployMessage {
   type: string;
@@ -15,12 +22,17 @@ interface DeployMessage {
 
 type Phase = "idle" | "running" | "ok" | "error";
 
-const actions: { id: StackAction; label: string; danger?: boolean }[] = [
-  { id: "up", label: "Deploy" },
-  { id: "pull", label: "Pull" },
-  { id: "restart", label: "Restart" },
-  { id: "stop", label: "Stop" },
-  { id: "down", label: "Down", danger: true },
+const actions: {
+  id: StackAction;
+  label: string;
+  danger?: boolean;
+  Icon: (p: { className?: string }) => JSX.Element;
+}[] = [
+  { id: "up", label: "Deploy", Icon: PlayIcon },
+  { id: "pull", label: "Pull", Icon: DownloadIcon },
+  { id: "restart", label: "Restart", Icon: RestartIcon },
+  { id: "stop", label: "Stop", Icon: StopIcon },
+  { id: "down", label: "Down", danger: true, Icon: ChevronsDownIcon },
 ];
 
 // DeployConsole renders the lifecycle action buttons for a managed stack plus a
@@ -94,7 +106,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             key={a.id}
             onClick={() => trigger(a.id)}
             disabled={running}
-            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
               a.id === "up"
                 ? "bg-accent-600 text-zinc-950 hover:bg-accent-500"
                 : a.danger
@@ -102,6 +114,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
                   : "border border-zinc-700 text-zinc-300 hover:bg-zinc-800"
             }`}
           >
+            <a.Icon className="h-3.5 w-3.5" />
             {a.label}
           </button>
         ))}

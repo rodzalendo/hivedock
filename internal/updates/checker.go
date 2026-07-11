@@ -49,7 +49,15 @@ type LocalImages interface {
 type Registry interface {
 	Tags(ctx context.Context, ref registry.Ref) ([]string, error)
 	Digest(ctx context.Context, ref registry.Ref) (string, error)
+	Created(ctx context.Context, ref registry.Ref, tag string) (time.Time, error)
 }
+
+// staleTolerance is how much older (by build date) a semver candidate may be
+// than the current image before it's rejected as a stale legacy tag. The slack
+// absorbs registries that rebuild the current tag more recently than a
+// genuinely newer release (e.g. a base-image security rebuild of 1.2.3 after
+// 1.3.0 shipped); stale legacy tags are typically years older, not weeks.
+const staleTolerance = 30 * 24 * time.Hour
 
 // Checker performs image update checks.
 type Checker struct {
@@ -92,7 +100,7 @@ func (c *Checker) CheckImage(ctx context.Context, image string) Result {
 			res.Error = err.Error()
 			return res
 		}
-		cand, diff, ok := registry.Candidate(ref.Tag, tags)
+		cand, diff, ok := c.freshestCandidate(ctx, ref, tags)
 		if ok {
 			res.Kind = KindSemver
 			res.HasUpdate = true
@@ -127,6 +135,56 @@ func (c *Checker) CheckImage(ctx context.Context, image string) Result {
 	// Remote digest known but local unknown: record it, can't assert an update.
 	res.Kind = KindDigest
 	return res
+}
+
+// freshestCandidate runs the semver engine, then sanity-checks the winner's
+// build date: a tag that parses as a newer version but whose image was built
+// well before the current one is a stale legacy tag (real-world example:
+// lscr.io/linuxserver/qbittorrent:5.1.2 → "20.04.1", an Ubuntu-era tag from
+// 2021), so it's excluded and the next-best candidate is tried. Date lookups
+// are best-effort: if either side can't be determined, the candidate is
+// accepted as before (fail open, never block a legitimate update).
+func (c *Checker) freshestCandidate(ctx context.Context, ref registry.Ref, tags []string) (string, registry.DiffType, bool) {
+	const maxDateChecks = 3
+
+	curCreated, err := c.reg.Created(ctx, ref, ref.Tag)
+	haveCur := err == nil && !curCreated.IsZero()
+
+	available := tags
+	for attempt := 0; attempt < maxDateChecks; attempt++ {
+		cand, diff, ok := registry.Candidate(ref.Tag, available)
+		if !ok {
+			return "", registry.DiffNone, false
+		}
+		if !haveCur {
+			return cand, diff, true // can't date-check; accept
+		}
+		candCreated, err := c.reg.Created(ctx, ref, cand)
+		if err != nil || candCreated.IsZero() {
+			return cand, diff, true // unknown date; accept
+		}
+		if candCreated.After(curCreated.Add(-staleTolerance)) {
+			return cand, diff, true // fresh enough — a real update
+		}
+		if c.logger != nil {
+			c.logger.Info("update check: skipping stale tag",
+				"repo", ref.Repo, "current", ref.Tag, "candidate", cand,
+				"currentBuilt", curCreated, "candidateBuilt", candCreated)
+		}
+		available = exclude(available, cand)
+	}
+	return "", registry.DiffNone, false
+}
+
+// exclude returns tags without the given tag.
+func exclude(tags []string, drop string) []string {
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if t != drop {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // CheckAll checks images concurrently (bounded by the worker count; the registry

@@ -62,12 +62,16 @@ export default function App() {
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 md:flex-row">
       <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
         <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 md:border-b-0 md:py-4">
-          <div className="flex items-center gap-2.5 px-1">
+          <button
+            onClick={() => setView("home")}
+            className="flex items-center gap-2.5 rounded-lg px-1 transition hover:opacity-80"
+            title="Home"
+          >
             <LogoMark />
             <span className="font-mono text-[14.5px] font-semibold tracking-[0.02em] text-zinc-50">
               hivedock
             </span>
-          </div>
+          </button>
           <div className="md:hidden">
             <SessionControls auth={auth} onLogout={handleLogout} />
           </div>

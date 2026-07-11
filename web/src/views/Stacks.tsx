@@ -9,7 +9,14 @@ import {
   type Stack,
   type Service,
 } from "../api";
-import { DriftBadge, OriginBadge, ServiceDot, StatusDot } from "../components/ui";
+import {
+  DriftBadge,
+  DriftInfo,
+  OriginBadge,
+  ServiceDot,
+  StatusDot,
+} from "../components/ui";
+import { PencilIcon, TrashIcon } from "../components/icons";
 import HostStrip from "../components/HostStrip";
 import LogsPanel from "../components/LogsPanel";
 import DeployConsole from "../components/DeployConsole";
@@ -26,7 +33,6 @@ export default function Stacks() {
   });
 
   const [selected, setSelected] = useState<string | null>(null);
-  const [createdName, setCreatedName] = useState<string | null>(null);
   const qc = useQueryClient();
 
   // Which stacks have an available image update (drives the row badge).
@@ -55,7 +61,6 @@ export default function Stacks() {
   async function handleCreate(name: string) {
     const created = await createStack(name);
     await qc.invalidateQueries({ queryKey: ["stacks"] });
-    setCreatedName(created.name);
     setSelected(created.name);
   }
 
@@ -121,9 +126,6 @@ export default function Stacks() {
           <StackDetail
             key={selectedStack.name}
             stack={selectedStack}
-            initialTab={
-              createdName === selectedStack.name ? "compose" : "containers"
-            }
             onDeleted={async () => {
               setSelected(null);
               await qc.invalidateQueries({ queryKey: ["stacks"] });
@@ -282,36 +284,31 @@ function StackRow({
   );
 }
 
-type DetailTab = "containers" | "compose" | "env";
 type ActionMode = "idle" | "rename" | "delete";
 
 function StackDetail({
   stack,
-  initialTab = "containers",
   onDeleted,
   onRenamed,
 }: {
   stack: Stack;
-  initialTab?: DetailTab;
   onDeleted: () => void | Promise<void>;
   onRenamed: (newName: string) => void | Promise<void>;
 }) {
   const managed = stack.origin === "managed";
-  const [tab, setTab] = useState<DetailTab>(
-    initialTab !== "containers" && !managed ? "containers" : initialTab,
-  );
   const services = stack.services ?? [];
+  const driftedServices = services.filter((s) => s.drifted).map((s) => s.name);
   const key = stack.name;
 
   return (
     <div className="space-y-4">
-      {/* Header: name + management actions, then deploy buttons under it. */}
+      {/* Header card: name + manage actions, deploy buttons, containers. */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <StatusDot status={stack.status} />
           <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
           <OriginBadge origin={stack.origin} />
-          {stack.drifted && <DriftBadge />}
+          {stack.drifted && <DriftInfo services={driftedServices} />}
           <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
           {managed && (
             <div className="ml-auto">
@@ -335,55 +332,51 @@ function StackDetail({
             <DeployConsole key={key} stack={stack.name} />
           </div>
         )}
+
+        <div className="border-t border-zinc-800 px-5 py-4">
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+            Containers
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-zinc-500">
+                  <th className="pb-2 pr-4 font-medium">Service</th>
+                  <th className="pb-2 pr-4 font-medium">Image</th>
+                  <th className="pb-2 pr-4 font-medium">State</th>
+                  <th className="pb-2 font-medium">Ports</th>
+                </tr>
+              </thead>
+              <tbody className="align-top">
+                {services.map((svc) => (
+                  <ServiceRow key={svc.name} svc={svc} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      {/* Two columns: config tabs on the left, always-on logs on the right. */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-          <div className="flex gap-1 border-b border-zinc-800 px-3 pt-2">
-            <Tab active={tab === "containers"} onClick={() => setTab("containers")}>
-              Containers
-            </Tab>
-            {managed && (
-              <Tab active={tab === "compose"} onClick={() => setTab("compose")}>
+      {/* Below: Compose + Env stacked on the left, always-on Logs right. */}
+      <div className={`grid gap-4 ${managed ? "xl:grid-cols-2" : ""}`}>
+        {managed && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+              <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
                 Compose
-              </Tab>
-            )}
-            {managed && (
-              <Tab active={tab === "env"} onClick={() => setTab("env")}>
-                Env
-              </Tab>
-            )}
-          </div>
-
-          {tab === "compose" && managed ? (
-            <ComposeEditor key={key} stack={stack.name} />
-          ) : tab === "env" && managed ? (
-            <EnvEditor key={key} stack={stack.name} />
-          ) : (
-            <div className="px-5 py-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-zinc-500">
-                      <th className="pb-2 pr-4 font-medium">Service</th>
-                      <th className="pb-2 pr-4 font-medium">Image</th>
-                      <th className="pb-2 pr-4 font-medium">State</th>
-                      <th className="pb-2 font-medium">Ports</th>
-                    </tr>
-                  </thead>
-                  <tbody className="align-top">
-                    {services.map((svc) => (
-                      <ServiceRow key={svc.name} svc={svc} />
-                    ))}
-                  </tbody>
-                </table>
               </div>
+              <ComposeEditor key={key} stack={stack.name} />
             </div>
-          )}
-        </div>
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+              <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+                Env
+              </div>
+              <EnvEditor key={key} stack={stack.name} />
+            </div>
+          </div>
+        )}
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
           <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
             Logs
           </div>
@@ -515,46 +508,25 @@ function StackActions({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2">
       <button
         onClick={() => setMode("rename")}
         disabled={running}
         title={running ? "Stop the stack first to rename it" : "Rename this stack"}
-        className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex items-center gap-1.5 rounded-lg border border-accent-500/40 px-3 py-1.5 text-sm font-medium text-accent-500 transition hover:bg-accent-500/10 disabled:cursor-not-allowed disabled:opacity-40"
       >
+        <PencilIcon className="h-3.5 w-3.5" />
         Rename
       </button>
       <button
         onClick={() => setMode("delete")}
         title="Delete this stack"
-        className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 transition hover:border-red-500/40 hover:text-red-400"
+        className="flex items-center gap-1.5 rounded-lg border border-red-500/40 px-3 py-1.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
       >
+        <TrashIcon className="h-3.5 w-3.5" />
         Delete
       </button>
     </div>
-  );
-}
-
-function Tab({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-t-lg px-3 py-1.5 text-sm transition ${
-        active
-          ? "bg-zinc-800/60 text-zinc-100"
-          : "text-zinc-500 hover:text-zinc-300"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
