@@ -1,23 +1,27 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import Home from "./views/Home";
 import Stacks from "./views/Stacks";
 import Dashboard from "./views/Dashboard";
 import Updates from "./views/Updates";
 import Settings from "./views/Settings";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useLiveUpdates } from "./useLiveUpdates";
-import { fetchAuthStatus, fetchUpdates, logout, type AuthStatus } from "./api";
+import {
+  fetchAuthStatus,
+  fetchHealth,
+  fetchUpdates,
+  logout,
+  type AuthStatus,
+} from "./api";
 import {
   LogoMark,
   HomeIcon,
   StacksIcon,
   UpdatesIcon,
-  StatusIcon,
   SettingsIcon,
 } from "./components/icons";
 
-type View = "home" | "stacks" | "updates" | "status" | "settings";
+type View = "home" | "stacks" | "updates" | "settings";
 
 const nav: {
   id: View;
@@ -27,7 +31,6 @@ const nav: {
   { id: "home", label: "Home", Icon: HomeIcon },
   { id: "stacks", label: "Stacks", Icon: StacksIcon },
   { id: "updates", label: "Updates", Icon: UpdatesIcon },
-  { id: "status", label: "Status", Icon: StatusIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ];
 
@@ -63,10 +66,10 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 md:flex-row">
       <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
-        <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 md:border-b-0 md:py-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 py-3 pl-4 pr-3 md:border-b-0 md:py-4">
           <button
             onClick={() => setView("home")}
-            className="flex items-center gap-2.5 rounded-lg px-1 transition hover:opacity-80"
+            className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80"
             title="Home"
           >
             <LogoMark />
@@ -101,7 +104,8 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="mt-auto hidden p-3 md:block">
+        <div className="mt-auto hidden space-y-2 p-3 md:block">
+          <BackendStatus />
           <SessionControls auth={auth} onLogout={handleLogout} />
         </div>
       </aside>
@@ -111,10 +115,37 @@ export default function App() {
           {view === "home" && <Dashboard />}
           {view === "stacks" && <Stacks />}
           {view === "updates" && <Updates />}
-          {view === "status" && <Home />}
           {view === "settings" && <Settings />}
         </ErrorBoundary>
       </main>
+    </div>
+  );
+}
+
+// BackendStatus is the compact health line at the bottom of the sidebar
+// (replaces the old Status page). Hover for details.
+function BackendStatus() {
+  const { data, isError } = useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    refetchInterval: 30_000,
+  });
+  const ok = !!data && !isError && data.status === "ok";
+  return (
+    <div
+      className="flex items-center gap-2 px-1 text-[11px] text-zinc-500"
+      title={
+        data
+          ? `Stacks dir: ${data.stacksDir}\nServer time: ${data.time}`
+          : "Backend unreachable"
+      }
+    >
+      <span
+        className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+          ok ? "bg-green-500" : "bg-red-500"
+        }`}
+      />
+      {ok ? `Backend ok · v${data.version}` : "Backend unreachable"}
     </div>
   );
 }

@@ -21,7 +21,7 @@ export default function Settings() {
     setBusy(true);
     setNote(null);
     try {
-      await saveSettings(webhook.trim());
+      await saveSettings({ webhookUrl: webhook.trim() });
       await refetch();
       setNote("Saved.");
     } catch (err) {
@@ -104,6 +104,8 @@ export default function Settings() {
         </div>
       </section>
 
+      <IntervalSection current={data.checkInterval} onSaved={refetch} />
+
       <PruneSection />
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
@@ -115,14 +117,6 @@ export default function Settings() {
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
           <Row label="Stacks directory" value={data.stacksDir} mono />
           <Row label="Data directory" value={data.dataDir} mono />
-          <Row
-            label="Update check"
-            value={
-              data.checkInterval === "disabled"
-                ? "disabled"
-                : `every ${data.checkInterval}`
-            }
-          />
           <Row label="Public host" value={data.publicHost || "(request host)"} />
           <Row
             label="Authentication"
@@ -132,6 +126,79 @@ export default function Settings() {
         </dl>
       </section>
     </div>
+  );
+}
+
+// IntervalSection controls how often the background update check runs.
+// Applies live (no restart) — the scheduler re-reads it every minute.
+function IntervalSection({
+  current,
+  onSaved,
+}: {
+  current: string;
+  onSaved: () => void;
+}) {
+  const options = [
+    { value: "off", label: "Off" },
+    { value: "15m", label: "Every 15 minutes" },
+    { value: "30m", label: "Every 30 minutes" },
+    { value: "1h", label: "Every hour" },
+    { value: "3h", label: "Every 3 hours" },
+    { value: "6h", label: "Every 6 hours" },
+    { value: "12h", label: "Every 12 hours" },
+    { value: "24h", label: "Every 24 hours" },
+  ];
+  // The server reports tidy duration strings ("30m", "6h") or "disabled".
+  const normalized = current === "disabled" ? "off" : current;
+  const [value, setValue] = useState(
+    options.some((o) => o.value === normalized) ? normalized : "30m",
+  );
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function onSave() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await saveSettings({ checkInterval: value });
+      onSaved();
+      setNote("Saved — applies within a minute.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-1 text-sm font-medium text-zinc-200">Update checks</h3>
+      <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
+        How often HiveDock checks registries for newer images in the
+        background. "Check now" on the Updates page always works regardless.
+      </p>
+      <div className="flex items-center gap-3">
+        <select
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-accent-500"
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={onSave}
+          disabled={busy}
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
+        >
+          Save
+        </button>
+        {note && <span className="text-xs text-zinc-500">{note}</span>}
+      </div>
+    </section>
   );
 }
 

@@ -114,10 +114,12 @@ test("navigating to Stacks shows the stacks list", async () => {
   expect(screen.getByText("Managed")).toBeInTheDocument();
 });
 
-test("navigating to Status shows backend health", async () => {
+test("sidebar shows backend health status", async () => {
   mockApi();
   renderApp();
 
-  fireEvent.click(screen.getByRole("button", { name: /Status/i }));
-  await waitFor(() => expect(screen.getByText("Health: ok")).toBeInTheDocument());
+  // The old Status page moved into the sidebar footer.
+  await waitFor(() =>
+    expect(screen.getByText(/Backend ok · vtest/)).toBeInTheDocument(),
+  );
 });

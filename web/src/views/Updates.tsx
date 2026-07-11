@@ -41,6 +41,15 @@ export default function Updates() {
 
   const qc = useQueryClient();
   const entries = useMemo(() => data ?? [], [data]);
+
+  // Most recent check across all images (drives "Last checked X ago").
+  const lastChecked = useMemo(() => {
+    let max = "";
+    for (const e of entries) {
+      if (e.checkedAt && e.checkedAt > max) max = e.checkedAt;
+    }
+    return max ? new Date(max) : null;
+  }, [entries]);
   const { available, ignored, current, other } = useMemo(() => {
     const available: UpdateEntry[] = [];
     const ignored: UpdateEntry[] = [];
@@ -162,6 +171,14 @@ export default function Updates() {
             <span className="flex items-center gap-1.5 text-xs text-zinc-500">
               {busy && <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />}
               {note}
+            </span>
+          )}
+          {!note && lastChecked && (
+            <span
+              className="text-xs text-zinc-600"
+              title={lastChecked.toLocaleString()}
+            >
+              Last checked {timeAgo(lastChecked)}
             </span>
           )}
           <button
@@ -453,6 +470,16 @@ function UpdateRow({
       )}
     </li>
   );
+}
+
+// timeAgo renders a compact relative time ("just now", "12m ago", "3h ago").
+function timeAgo(d: Date): string {
+  const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 // usageLabel summarizes where an image is used: the distinct stack names, with

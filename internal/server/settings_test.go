@@ -53,8 +53,9 @@ func TestSettingsGetReflectsConfig(t *testing.T) {
 	if got.StacksDir != "/opt/stacks" {
 		t.Errorf("stacksDir = %q", got.StacksDir)
 	}
-	if got.CheckInterval != "6h0m0s" {
-		t.Errorf("checkInterval = %q, want 6h0m0s", got.CheckInterval)
+	// Durations are tidied for display: 6h0m0s -> 6h.
+	if got.CheckInterval != "6h" {
+		t.Errorf("checkInterval = %q, want 6h", got.CheckInterval)
 	}
 }
 

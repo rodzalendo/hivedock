@@ -244,23 +244,30 @@ func (a *api) sendWebhook(webhookURL string, newUpdates []updates.Result) {
 	a.logger.Info("webhook sent", "count", len(items), "status", resp.StatusCode)
 }
 
-// startUpdateScheduler runs an initial check shortly after startup, then repeats
-// every cfg.CheckInterval, until ctx is cancelled. A no-op when the interval is
-// 0 (disabled) or there's no store.
-func (a *api) startUpdateScheduler(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		return
-	}
+// startUpdateScheduler runs periodic update checks. The cadence is re-read
+// from settings every minute (effectiveCheckInterval), so changing it in the
+// UI — including turning it on or off — applies without a restart.
+func (a *api) startUpdateScheduler(ctx context.Context) {
 	go func() {
-		timer := time.NewTimer(30 * time.Second) // let the daemon/stacks settle first
-		defer timer.Stop()
+		// Let the daemon/stacks settle, then treat startup as "due now" when
+		// checks are enabled.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		var lastRun time.Time
+		tick := time.NewTicker(time.Minute)
+		defer tick.Stop()
 		for {
+			if iv := a.effectiveCheckInterval(); iv > 0 && time.Since(lastRun) >= iv {
+				a.backgroundCheck(ctx)
+				lastRun = time.Now()
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-timer.C:
-				a.backgroundCheck(ctx)
-				timer.Reset(interval)
+			case <-tick.C:
 			}
 		}
 	}()

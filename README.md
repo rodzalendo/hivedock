@@ -67,7 +67,7 @@ Everything is configured with environment variables:
 | `DATA_DIR` | `/app/data` | SQLite, icon cache, app state. |
 | `AUTH_DISABLED` | `false` | Skip login entirely. Only for trusted LANs. |
 | `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links do not rot. |
-| `CHECK_INTERVAL` | `6h` | Periodic update check cadence. `off` disables it; "Check now" always works. |
+| `CHECK_INTERVAL` | `30m` | Periodic update check cadence. `off` disables it; also editable live in Settings. |
 | `WEBHOOK_URL` | unset | POSTed a JSON payload when new updates are found. Also editable in Settings. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 

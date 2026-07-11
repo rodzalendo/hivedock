@@ -178,6 +178,20 @@ export async function setServiceVisibility(
   );
 }
 
+// setServiceName persists a custom display name for a service's card; pass an
+// empty string to revert to the automatic name.
+export async function setServiceName(
+  stack: string,
+  service: string,
+  name: string,
+): Promise<void> {
+  await mutate(
+    `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/name`,
+    "PUT",
+    { name },
+  );
+}
+
 // setServiceIcon persists a custom icon (URL or dashboard-icons slug) for a
 // service; pass an empty string to clear it and revert to the automatic icon.
 export async function setServiceIcon(
@@ -425,8 +439,13 @@ export interface Settings {
 
 export const fetchSettings = () => getJSON<Settings>("/api/settings");
 
-export async function saveSettings(webhookUrl: string): Promise<Settings> {
-  const res = await mutate("/api/settings", "PUT", { webhookUrl });
+// saveSettings patches the editable settings; omit a field to leave it as-is.
+// checkInterval: "off", a duration like "30m"/"6h", or "" to revert to env.
+export async function saveSettings(patch: {
+  webhookUrl?: string;
+  checkInterval?: string;
+}): Promise<Settings> {
+  const res = await mutate("/api/settings", "PUT", patch);
   return (await res.json()) as Settings;
 }
 

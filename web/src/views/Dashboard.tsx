@@ -6,6 +6,7 @@ import {
   saveHomeLayout,
   setServiceVisibility,
   setServiceIcon,
+  setServiceName,
   type HomeEntry,
   type HomeLayout,
 } from "../api";
@@ -29,11 +30,15 @@ const columnsClass: Record<number, string> = {
 };
 
 // Tile size presets (the Customize slider): min card width for the ungrouped
-// grid plus icon/padding/font scaling.
-const tileSizes: Record<number, { minW: number; icon: number; pad: string; name: string; sub: string }> = {
-  1: { minW: 200, icon: 30, pad: "p-2", name: "text-[13px]", sub: "text-[10px]" },
-  2: { minW: 250, icon: 40, pad: "p-3", name: "text-sm", sub: "text-xs" },
-  3: { minW: 320, icon: 52, pad: "p-4", name: "text-base", sub: "text-sm" },
+// grid plus icon/padding/font scaling. The compact size drops the subtitle so
+// titles keep room to breathe.
+const tileSizes: Record<
+  number,
+  { minW: number; icon: number; pad: string; name: string; sub: string; showSub: boolean }
+> = {
+  1: { minW: 190, icon: 28, pad: "p-2", name: "text-[13px]", sub: "text-[10px]", showSub: false },
+  2: { minW: 250, icon: 40, pad: "p-3", name: "text-sm", sub: "text-xs", showSub: true },
+  3: { minW: 320, icon: 52, pad: "p-4", name: "text-base", sub: "text-sm", showSub: true },
 };
 
 // statusRank orders cards when sorting by status: running first, stopped
@@ -510,9 +515,63 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(editing ? groups.length > 0 : namedGroups.length > 0) ? (
+      {editing && (
+        // In Customize, the ungrouped pool is a full-width dense grid too —
+        // just with visible chrome so it works as a drop target.
+        <section
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            dropOnGroup(DEFAULT_GROUP);
+          }}
+          className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/30 p-3"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              Ungrouped
+            </h3>
+            <span className="text-[10px] text-zinc-600">
+              (drop an app here to remove it from its group)
+            </span>
+          </div>
+          <div
+            className="grid gap-3"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tile.minW}px, 1fr))` }}
+          >
+            {ungrouped.map((e) => (
+              <div
+                key={keyOf(e)}
+                draggable
+                onDragStart={(ev) => {
+                  ev.stopPropagation();
+                  dragged.current = { kind: "card", key: keyOf(e) };
+                }}
+                onDragOver={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                }}
+                onDrop={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  dropOnCard(DEFAULT_GROUP, keyOf(e));
+                }}
+                className="cursor-grab"
+              >
+                <Card
+                  entry={e}
+                  editing
+                  tile={tile}
+                  hiddenSiblings={hiddenByStack.get(e.stack)}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {namedGroups.length > 0 ? (
         <div className={`${columnsClass[columns]} gap-4`}>
-          {(editing ? groups : namedGroups).map(([key, items]) => (
+          {namedGroups.map(([key, items]) => (
             <section
               key={key}
               draggable={editing}
@@ -652,9 +711,11 @@ function Card({
           </span>
           <StatusDotSmall status={entry.status} />
         </div>
-        <div className={`truncate text-zinc-500 ${tile.sub}`}>
-          {entry.description || entry.stack}
-        </div>
+        {tile.showSub && (
+          <div className={`truncate text-zinc-500 ${tile.sub}`}>
+            {entry.description || entry.stack}
+          </div>
+        )}
       </div>
     </>
   );
@@ -720,7 +781,7 @@ function Card({
               )}
             </div>
           )}
-          {!editing && <IconEditor entry={entry} />}
+          {!editing && <CardEditor entry={entry} />}
           {!editing && (
             <button
               onClick={() => toggleHidden.mutate()}
@@ -780,51 +841,83 @@ function SubRow({ entry }: { entry: HomeEntry }) {
   );
 }
 
-// IconEditor lets the user set a custom icon (image URL or dashboard-icons
-// slug) for a card, or reset to the automatic one. Persisted server-side.
-function IconEditor({ entry }: { entry: HomeEntry }) {
+// CardEditor lets the user rename a card and set a custom icon (image URL or
+// dashboard-icons slug), or reset either to the automatic value. Persisted
+// server-side.
+function CardEditor({ entry }: { entry: HomeEntry }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState(entry.icon ?? "");
+  const [name, setName] = useState(entry.name);
+  const [icon, setIcon] = useState(entry.icon ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const save = useMutation({
-    mutationFn: (icon: string) => setServiceIcon(entry.stack, entry.service, icon),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["home"] });
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      // A changed (or cleared) name updates the override; clearing reverts
+      // to the automatic name.
+      if (name.trim() !== entry.name) {
+        await setServiceName(entry.stack, entry.service, name.trim());
+      }
+      if (icon.trim() !== (entry.icon ?? "")) {
+        await setServiceIcon(entry.stack, entry.service, icon.trim());
+      }
+      await qc.invalidateQueries({ queryKey: ["home"] });
       setOpen(false);
-    },
-  });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="relative">
       <button
         onClick={() => {
-          setValue(entry.icon ?? "");
+          setName(entry.name);
+          setIcon(entry.icon ?? "");
+          setError(null);
           setOpen((v) => !v);
         }}
         className="rounded px-1.5 py-1 text-zinc-600 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-300 group-hover:opacity-100"
-        title="Set icon"
+        title="Edit name & icon"
       >
         <ImageIcon className="h-4 w-4" />
       </button>
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
           <label className="mb-1 block text-[11px] font-medium text-zinc-400">
-            Icon URL or slug
+            Display name
           </label>
           <input
             autoFocus
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") save.mutate(value.trim());
+              if (e.key === "Enter") void save();
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder="Automatic"
+            className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
+          />
+          <label className="mb-1 mt-2 block text-[11px] font-medium text-zinc-400">
+            Icon URL or slug
+          </label>
+          <input
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void save();
               if (e.key === "Escape") setOpen(false);
             }}
             placeholder="https://…/icon.png  or  jellyfin"
             className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
           />
           <p className="mt-1 text-[10px] leading-snug text-zinc-600">
-            A full image URL, or a{" "}
+            Icon: a full image URL, or a{" "}
             <a
               href="https://github.com/homarr-labs/dashboard-icons"
               target="_blank"
@@ -833,25 +926,16 @@ function IconEditor({ entry }: { entry: HomeEntry }) {
             >
               dashboard-icons
             </a>{" "}
-            name. Leave empty to auto-detect.
+            name. Leave either field empty to go back to automatic.
           </p>
           <div className="mt-2 flex items-center gap-2">
             <button
-              onClick={() => save.mutate(value.trim())}
-              disabled={save.isPending}
+              onClick={() => void save()}
+              disabled={busy}
               className="rounded-md bg-accent-600 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
             >
-              Save
+              {busy ? "Saving…" : "Save"}
             </button>
-            {entry.icon && (
-              <button
-                onClick={() => save.mutate("")}
-                disabled={save.isPending}
-                className="rounded-md px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
-              >
-                Reset
-              </button>
-            )}
             <button
               onClick={() => setOpen(false)}
               className="ml-auto rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
@@ -859,11 +943,7 @@ function IconEditor({ entry }: { entry: HomeEntry }) {
               Cancel
             </button>
           </div>
-          {save.isError && (
-            <p className="mt-1 text-[10px] text-red-400">
-              {(save.error as Error).message}
-            </p>
-          )}
+          {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}
         </div>
       )}
     </div>

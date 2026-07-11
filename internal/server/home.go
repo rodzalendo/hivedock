@@ -28,11 +28,16 @@ func (a *api) listHome(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Warn("home: load icon overrides", "err", err)
 	}
+	nameOverrides, err := a.nameOverrides()
+	if err != nil {
+		a.logger.Warn("home: load name overrides", "err", err)
+	}
 
 	entries := discovery.Resolve(stacksList, discovery.Options{
 		Host:           a.publicHost(r),
 		HiddenOverride: overrides,
 		IconOverride:   iconOverrides,
+		NameOverride:   nameOverrides,
 	})
 	if entries == nil {
 		entries = []discovery.Entry{}
@@ -139,6 +144,50 @@ func (a *api) setIcon(w http.ResponseWriter, r *http.Request) {
 	}
 	a.hub.NotifyChanged("prefs")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setName persists a custom display name for a service's card; empty clears
+// it back to the automatic name.
+func (a *api) setName(w http.ResponseWriter, r *http.Request) {
+	stack := chi.URLParam(r, "stack")
+	service := chi.URLParam(r, "service")
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if a.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if err := a.db.SetServiceName(stack, service, strings.TrimSpace(body.Name)); err != nil {
+		a.logger.Error("set name", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to persist name")
+		return
+	}
+	a.hub.NotifyChanged("prefs")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// nameOverrides returns a lookup over persisted custom display names.
+func (a *api) nameOverrides() (func(stack, service string) (string, bool), error) {
+	if a.db == nil {
+		return nil, nil
+	}
+	m, err := a.db.ServiceNameOverrides()
+	if err != nil {
+		return nil, err
+	}
+	return func(stack, service string) (string, bool) {
+		if svcs, ok := m[stack]; ok {
+			if v, ok := svcs[service]; ok {
+				return v, true
+			}
+		}
+		return "", false
+	}, nil
 }
 
 // icon serves an image slug's icon: cache → CDN → 404 (UI falls back to a

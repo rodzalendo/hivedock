@@ -48,6 +48,9 @@ type Options struct {
 	// IconOverride reports a user's custom icon (URL or slug) for a service,
 	// taking precedence over any label. Returns (value, set).
 	IconOverride func(stack, service string) (string, bool)
+	// NameOverride reports a user's custom display name for a service, taking
+	// precedence over labels and the automatic name. Returns (value, set).
+	NameOverride func(stack, service string) (string, bool)
 }
 
 // Resolve produces one entry per service across all stacks (managed + external).
@@ -84,6 +87,12 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 			name = humanize(st.Name)
 		} else {
 			name = humanize(svc.Name)
+		}
+	}
+	// A user's rename wins over labels and the automatic name.
+	if opts.NameOverride != nil {
+		if v, set := opts.NameOverride(st.Name, svc.Name); set && v != "" {
+			name = v
 		}
 	}
 

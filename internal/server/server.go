@@ -49,8 +49,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 
 	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker}
 
-	// Periodic background update checks (env CHECK_INTERVAL; 0 disables).
-	api.startUpdateScheduler(ctx, cfg.CheckInterval)
+	// Periodic background update checks (settings override CHECK_INTERVAL;
+	// cadence changes apply live).
+	api.startUpdateScheduler(ctx)
 
 	r.Route("/api", func(r chi.Router) {
 		// Public: liveness + the auth bootstrap (status/setup/login).
@@ -90,6 +91,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Put("/home/layout", api.putHomeLayout)
 			r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
 			r.Put("/home/{stack}/{service}/icon", api.setIcon)
+			r.Put("/home/{stack}/{service}/name", api.setName)
 			r.Get("/icons/{slug}", api.icon)
 		})
 	})

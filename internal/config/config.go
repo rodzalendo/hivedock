@@ -37,7 +37,7 @@ func Load() Config {
 		PublicHost:   env("PUBLIC_HOST", ""),
 		LogLevel:     logLevel(env("LOG_LEVEL", "info")),
 
-		CheckInterval: envDuration("CHECK_INTERVAL", 6*time.Hour),
+		CheckInterval: envDuration("CHECK_INTERVAL", 30*time.Minute),
 		WebhookURL:    env("WEBHOOK_URL", ""),
 	}
 }
