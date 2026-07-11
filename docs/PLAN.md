@@ -275,6 +275,23 @@ Exit: a stranger can go from README to working dashboard in under 5 minutes.
 > in the README await a hosted instance. **Dogfood on PCT 102** is the remaining
 > real-world gate (blocked on `HIVEDOCK_DEPLOY_HOST`).
 
+## Post-v1 status (2026-07-11)
+
+> **Shipped and deployed.** The repo is public at `github.com/rodzalendo/hivedock`;
+> CI + Release publish `ghcr.io/rodzalendo/hivedock` (`:edge` on main,
+> `:X.Y.Z`/`:latest` on tags). Release train so far: **v0.1.0 → v0.1.4**.
+> Running in production side-by-side with Dockge on the user's Proxmox LXC
+> (PCT 101, HiveDock on `:5002`, same real `/opt/stacks`) — this replaced the
+> planned PCT 102 gate. Several feedback rounds landed (detail in git history):
+> stale-tag build-date guard in the update engine (the qbittorrent `20.04.1`
+> false positive, regression-tested), per-image update ignore, live-editable
+> check interval (default 30m), user-defined home groups with drag & drop +
+> tile size slider + card rename/icon overrides, hidden-sidecar reveal, stack
+> rename/delete, force-recreate for cross-tool drift, prune + disk usage,
+> security headers + login damping, branding as **HiveDock**. Remaining:
+> README screenshots (drop into docs/screenshots/, then uncomment the image
+> lines) and the parking lot below.
+
 ## Risk register
 
 | Risk | Mitigation |
