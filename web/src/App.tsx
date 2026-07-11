@@ -63,10 +63,10 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 md:flex-row">
       <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
-        <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-3 md:border-b-0 md:py-4">
+        <div className="flex items-center justify-between border-b border-zinc-800 py-3 pl-4 pr-3 md:border-b-0 md:py-4">
           <button
             onClick={() => setView("home")}
-            className="flex items-center gap-2.5 rounded-lg px-1 transition hover:opacity-80"
+            className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80"
             title="Home"
           >
             <LogoMark />

@@ -146,10 +146,11 @@ export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
 // HomeLayout is the user's dashboard arrangement. All fields optional; the
 // server stores it as an opaque JSON object.
 export interface HomeLayout {
-  columns?: number; // group columns on wide screens (1-4)
-  sort?: "name" | "status";
+  columns?: number; // group columns on wide screens (1-4); default 1
+  sort?: "name" | "status" | "manual";
   groups?: string[]; // user-created group names
   cardGroups?: Record<string, string>; // "stack/service" -> group name ("" = default)
+  cardOrder?: Record<string, string[]>; // group name -> card keys (manual sort)
   groupOrder?: string[]; // group names in display order
 }
 
