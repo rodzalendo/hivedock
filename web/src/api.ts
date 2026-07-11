@@ -147,6 +147,7 @@ export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
 // server stores it as an opaque JSON object.
 export interface HomeLayout {
   columns?: number; // group columns on wide screens (1-4); default 1
+  tileSize?: number; // 1 (compact) | 2 (default) | 3 (large)
   sort?: "name" | "status" | "manual";
   groups?: string[]; // user-created group names
   cardGroups?: Record<string, string>; // "stack/service" -> group name ("" = default)
@@ -222,7 +223,7 @@ export async function logout(): Promise<void> {
 
 // ---- Stack mutations ----
 
-export type StackAction = "up" | "down" | "restart" | "pull" | "stop";
+export type StackAction = "up" | "down" | "restart" | "pull" | "stop" | "recreate";
 
 export interface DeployAck {
   id: string;

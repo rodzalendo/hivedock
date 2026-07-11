@@ -5,6 +5,7 @@ import {
   createStack,
   deleteStack,
   renameStack,
+  runStackAction,
   fetchUpdates,
   type Stack,
   type Service,
@@ -308,7 +309,14 @@ function StackDetail({
           <StatusDot status={stack.status} />
           <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
           <OriginBadge origin={stack.origin} />
-          {stack.drifted && <DriftInfo services={driftedServices} />}
+          {stack.drifted && (
+            <DriftInfo
+              services={driftedServices}
+              onForceRecreate={
+                managed ? () => void runStackAction(stack.name, "recreate") : undefined
+              }
+            />
+          )}
           <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
           {managed && (
             <div className="ml-auto">
@@ -357,24 +365,9 @@ function StackDetail({
         </div>
       </div>
 
-      {/* Below: Compose + Env stacked on the left, always-on Logs right. */}
+      {/* Below: Compose/Env (toggled) on the left, always-on Logs right. */}
       <div className={`grid gap-4 ${managed ? "xl:grid-cols-2" : ""}`}>
-        {managed && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-              <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
-                Compose
-              </div>
-              <ComposeEditor key={key} stack={stack.name} />
-            </div>
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-              <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
-                Env
-              </div>
-              <EnvEditor key={key} stack={stack.name} />
-            </div>
-          </div>
-        )}
+        {managed && <ConfigCard key={`cfg-${key}`} stack={stack.name} />}
 
         <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
           <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
@@ -387,6 +380,36 @@ function StackDetail({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ConfigCard holds the stack's editable files — the compose file and its
+// .env — in one card with a small toggle between them.
+function ConfigCard({ stack }: { stack: string }) {
+  const [file, setFile] = useState<"compose" | "env">("compose");
+  return (
+    <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
+      <div className="flex items-center gap-1 border-b border-zinc-800 px-4 py-2">
+        {(["compose", "env"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFile(f)}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition ${
+              file === f
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            {f === "compose" ? "Compose" : "Env"}
+          </button>
+        ))}
+      </div>
+      {file === "compose" ? (
+        <ComposeEditor key={stack} stack={stack} />
+      ) : (
+        <EnvEditor key={stack} stack={stack} />
+      )}
     </div>
   );
 }

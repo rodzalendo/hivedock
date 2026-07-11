@@ -251,7 +251,7 @@ export default function Updates() {
       {ignored.length > 0 && (
         <div>
           <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-            Ignored (keeping pinned version)
+            Ignored
           </h3>
           <p className="mb-1.5 text-[11px] text-zinc-600">
             An update exists, but you chose to stay on the pinned tag. These are

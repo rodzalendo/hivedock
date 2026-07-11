@@ -14,8 +14,8 @@ import HostStrip from "../components/HostStrip";
 import { ChevronsDownIcon, EyeIcon, EyeOffIcon, ImageIcon } from "../components/icons";
 
 // The pool every card lives in unless the user (or a compose label) says
-// otherwise. When it is the only group, no header is rendered at all — the
-// default dashboard is a flat, single-column list.
+// otherwise. Outside of Customize mode it renders with no header at all —
+// ungrouped apps are just a dense grid filling the screen.
 const DEFAULT_GROUP = "Apps";
 
 const keyOf = (e: HomeEntry) => `${e.stack}/${e.service}`;
@@ -26,6 +26,14 @@ const columnsClass: Record<number, string> = {
   2: "columns-1 sm:columns-2",
   3: "columns-1 sm:columns-2 xl:columns-3",
   4: "columns-1 sm:columns-2 lg:columns-3 xl:columns-4",
+};
+
+// Tile size presets (the Customize slider): min card width for the ungrouped
+// grid plus icon/padding/font scaling.
+const tileSizes: Record<number, { minW: number; icon: number; pad: string; name: string; sub: string }> = {
+  1: { minW: 200, icon: 30, pad: "p-2", name: "text-[13px]", sub: "text-[10px]" },
+  2: { minW: 250, icon: 40, pad: "p-3", name: "text-sm", sub: "text-xs" },
+  3: { minW: 320, icon: 52, pad: "p-4", name: "text-base", sub: "text-sm" },
 };
 
 // statusRank orders cards when sorting by status: running first, stopped
@@ -79,6 +87,7 @@ export default function Dashboard() {
     [editing, draft, savedLayout],
   );
   const columns = Math.min(4, Math.max(1, layout.columns ?? 1));
+  const tile = tileSizes[Math.min(3, Math.max(1, layout.tileSize ?? 2))];
 
   const entries = useMemo(() => data ?? [], [data]);
 
@@ -160,8 +169,10 @@ export default function Dashboard() {
     return keys.map((k) => [k, map.get(k)!] as const);
   }, [filtered, layout, editing]);
 
-  // Flat mode: nothing but the default pool -> no group chrome at all.
-  const flat = !editing && groups.length === 1 && groups[0][0] === DEFAULT_GROUP;
+  // Outside Customize, the default pool renders headerless as a dense grid;
+  // only user/label groups get section chrome.
+  const ungrouped = groups.find(([k]) => k === DEFAULT_GROUP)?.[1] ?? [];
+  const namedGroups = groups.filter(([k]) => k !== DEFAULT_GROUP);
 
   const hiddenCount = entries.filter((e) => e.hidden).length;
   const userGroups = layout.groups ?? [];
@@ -169,6 +180,7 @@ export default function Dashboard() {
   function startEdit() {
     setDraft({
       columns,
+      tileSize: savedLayout?.tileSize ?? 2,
       sort: savedLayout?.sort ?? "name",
       groups: [...(savedLayout?.groups ?? [])],
       cardGroups: { ...(savedLayout?.cardGroups ?? {}) },
@@ -177,6 +189,20 @@ export default function Dashboard() {
     });
     setNewGroup("");
     setEditing(true);
+  }
+
+  // resetLayout wipes every customization back to the defaults: no groups,
+  // dense ungrouped grid, name sort. Takes effect on Save.
+  function resetLayout() {
+    setDraft({
+      columns: 1,
+      tileSize: 2,
+      sort: "name",
+      groups: [],
+      cardGroups: {},
+      cardOrder: {},
+      groupOrder: [],
+    });
   }
 
   async function saveEdit() {
@@ -396,6 +422,31 @@ export default function Dashboard() {
                 <option value="manual">manual</option>
               </select>
             </label>
+            <label
+              className="flex items-center gap-1.5 text-zinc-400"
+              title="Tile size"
+            >
+              Size
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={1}
+                value={draft.tileSize ?? 2}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, tileSize: Number(e.target.value) }))
+                }
+                className="w-20 accent-accent-500"
+              />
+            </label>
+            <button
+              onClick={resetLayout}
+              disabled={saving}
+              title="Clear all groups, assignments, and ordering (applies on Save)"
+              className="rounded-lg border border-zinc-700 px-2 py-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-40"
+            >
+              Reset
+            </button>
             <button
               onClick={saveEdit}
               disabled={saving}
@@ -442,18 +493,26 @@ export default function Dashboard() {
         </div>
       )}
 
-      {groups.length > 0 && flat ? (
-        // Flat default: no group chrome at all, just cards flowing in columns.
-        <div className={`${columnsClass[columns]} gap-4`}>
-          {groups[0][1].map((e) => (
-            <div key={keyOf(e)} className="mb-2 break-inside-avoid">
-              <Card entry={e} hiddenSiblings={hiddenByStack.get(e.stack)} />
-            </div>
+      {!editing && ungrouped.length > 0 && (
+        // Ungrouped apps: a headerless dense grid that fills the screen.
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tile.minW}px, 1fr))` }}
+        >
+          {ungrouped.map((e) => (
+            <Card
+              key={keyOf(e)}
+              entry={e}
+              tile={tile}
+              hiddenSiblings={hiddenByStack.get(e.stack)}
+            />
           ))}
         </div>
-      ) : groups.length > 0 ? (
+      )}
+
+      {(editing ? groups.length > 0 : namedGroups.length > 0) ? (
         <div className={`${columnsClass[columns]} gap-4`}>
-          {groups.map(([key, items]) => (
+          {(editing ? groups : namedGroups).map(([key, items]) => (
             <section
               key={key}
               draggable={editing}
@@ -522,6 +581,7 @@ export default function Dashboard() {
                     <Card
                       entry={e}
                       editing={editing}
+                      tile={tile}
                       hiddenSiblings={hiddenByStack.get(e.stack)}
                     />
                   </div>
@@ -561,10 +621,12 @@ function GroupTitle({
 function Card({
   entry,
   editing,
+  tile = tileSizes[2],
   hiddenSiblings,
 }: {
   entry: HomeEntry;
   editing?: boolean;
+  tile?: (typeof tileSizes)[number];
   hiddenSiblings?: HomeEntry[];
 }) {
   const qc = useQueryClient();
@@ -582,13 +644,15 @@ function Card({
   const clickable = !!entry.url && !editing;
   const inner = (
     <>
-      <AppIcon entry={entry} />
+      <AppIcon entry={entry} size={tile.icon} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate font-medium text-zinc-100">{entry.name}</span>
+          <span className={`truncate font-medium text-zinc-100 ${tile.name}`}>
+            {entry.name}
+          </span>
           <StatusDotSmall status={entry.status} />
         </div>
-        <div className="truncate text-xs text-zinc-500">
+        <div className={`truncate text-zinc-500 ${tile.sub}`}>
           {entry.description || entry.stack}
         </div>
       </div>
@@ -601,7 +665,7 @@ function Card({
         entry.hidden ? "opacity-60" : ""
       }`}
     >
-      <div className="flex items-center gap-3 p-3">
+      <div className={`flex items-center gap-3 ${tile.pad}`}>
         {clickable ? (
           <a
             href={entry.url}

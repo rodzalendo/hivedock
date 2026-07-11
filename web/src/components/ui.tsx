@@ -50,7 +50,13 @@ export function DriftBadge() {
 // explaining what drift means, which services drifted, and how to resolve it.
 // Use it anywhere that isn't nested inside another button (detail header,
 // table cells); lists keep the plain DriftBadge.
-export function DriftInfo({ services }: { services?: string[] }) {
+export function DriftInfo({
+  services,
+  onForceRecreate,
+}: {
+  services?: string[];
+  onForceRecreate?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -79,12 +85,14 @@ export function DriftInfo({ services }: { services?: string[] }) {
             Configuration drift
           </h4>
           <p className="text-xs leading-relaxed text-zinc-300">
-            The running container was created from a{" "}
+            The running container's configuration fingerprint doesn't match the
+            compose file on disk. Common causes: the file was edited after the
+            last deploy, or the container was{" "}
             <span className="font-medium text-zinc-100">
-              different version of this compose file
+              deployed by another tool
             </span>{" "}
-            than what's on disk now. Either the file was edited after the last
-            deploy, or the container was started with other settings.
+            (or another compose version), which stamps a different fingerprint
+            even for an identical file. It is not about image updates.
           </p>
           {services && services.length > 0 && (
             <p className="mt-2 text-xs text-zinc-400">
@@ -93,13 +101,22 @@ export function DriftInfo({ services }: { services?: string[] }) {
             </p>
           )}
           <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-            This is <span className="text-zinc-300">not</span> about image
-            updates — it compares your file against the running config. To
-            resolve it, press{" "}
-            <span className="font-medium text-accent-500">Deploy</span>: compose
-            recreates only the services whose config changed. If the running
-            state is the one you want instead, edit the file to match it.
+            <span className="font-medium text-accent-500">Deploy</span> recreates
+            only what compose itself considers changed — so a fingerprint from
+            another tool can survive it. Force recreate rebuilds the containers
+            from this file unconditionally, which always clears the badge.
           </p>
+          {onForceRecreate && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onForceRecreate();
+              }}
+              className="mt-3 rounded-lg border border-amber-500/40 px-2.5 py-1 text-xs font-medium text-amber-400 transition hover:bg-amber-500/10"
+            >
+              Force recreate now
+            </button>
+          )}
         </div>
       )}
     </div>
