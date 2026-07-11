@@ -22,7 +22,8 @@ export default function Updates() {
   const [checking, setChecking] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [note, setNote] = useState<string | null>(null);
-  const [applying, setApplying] = useState<string | null>(null);
+  const [applyingImages, setApplyingImages] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // A completed check (updates:changed) clears the checking state.
   useEffect(() => {
@@ -43,6 +44,14 @@ export default function Updates() {
     }
     return { available, current, other };
   }, [entries]);
+
+  // Only semver updates can be one-click applied (digest updates aren't a tag
+  // rewrite). Those are the selectable/bulk-updatable rows.
+  const applicable = useMemo(
+    () => available.filter((e) => e.kind === "semver" && e.candidate),
+    [available],
+  );
+  const busy = applyingImages.size > 0;
 
   async function onCheck() {
     setChecking(true);
@@ -71,26 +80,49 @@ export default function Updates() {
     });
   }
 
-  // Rewrite every usage's compose file to the candidate tag, then redeploy each
-  // affected stack, then re-check to refresh status.
-  async function applyUpdate(entry: UpdateEntry) {
-    if (!entry.candidate || applying) return;
-    setApplying(entry.image);
+  function toggleSelect(image: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(image)) next.delete(image);
+      else next.add(image);
+      return next;
+    });
+  }
+
+  const allSelected =
+    applicable.length > 0 && applicable.every((e) => selected.has(e.image));
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set(applicable.map((e) => e.image)));
+  }
+
+  // Rewrite every selected update's compose files, redeploy each affected stack
+  // once (a single `up` picks up all changed services in that stack), then
+  // re-check to refresh status.
+  async function applyMany(list: UpdateEntry[]) {
+    const targets = list.filter((e) => e.kind === "semver" && e.candidate);
+    if (targets.length === 0 || busy) return;
+    setApplyingImages(new Set(targets.map((e) => e.image)));
     setNote(null);
     try {
-      for (const u of entry.usedBy) {
-        await updateService(u.stack, u.service, entry.candidate);
+      const stacks = new Set<string>();
+      for (const e of targets) {
+        for (const u of e.usedBy) {
+          await updateService(u.stack, u.service, e.candidate!);
+          stacks.add(u.stack);
+        }
       }
-      const stacks = [...new Set(entry.usedBy.map((u) => u.stack))];
       for (const s of stacks) {
         await runStackAction(s, "up");
       }
-      setNote(`Updated ${entry.image} → ${entry.candidate}; redeploying…`);
+      setNote(
+        `Updated ${targets.length} image${targets.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"}; redeploying…`,
+      );
+      setSelected(new Set());
       await checkUpdates();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Update failed.");
     } finally {
-      setApplying(null);
+      setApplyingImages(new Set());
     }
   }
 
@@ -133,18 +165,63 @@ export default function Updates() {
       )}
 
       {available.length > 0 && (
-        <Section title="Update available">
-          {available.map((e) => (
-            <UpdateRow
-              key={e.image}
-              entry={e}
-              open={expanded.has(e.image)}
-              onToggle={() => toggle(e.image)}
-              onApply={e.kind === "semver" ? () => applyUpdate(e) : undefined}
-              applying={applying === e.image}
-            />
-          ))}
-        </Section>
+        <div>
+          <div className="mb-1.5 flex flex-wrap items-center gap-3">
+            <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+              Update available
+            </h3>
+            {applicable.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    disabled={busy}
+                    className="accent-hive-500"
+                  />
+                  Select all
+                </label>
+                <button
+                  onClick={() =>
+                    applyMany(applicable.filter((e) => selected.has(e.image)))
+                  }
+                  disabled={busy || selected.size === 0}
+                  className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  Update selected ({selected.size})
+                </button>
+                <button
+                  onClick={() => applyMany(applicable)}
+                  disabled={busy}
+                  className="rounded-lg bg-hive-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
+                >
+                  {busy ? "Updating…" : `Update all (${applicable.length})`}
+                </button>
+              </div>
+            )}
+          </div>
+          <ul className="space-y-1">
+            {available.map((e) => (
+              <UpdateRow
+                key={e.image}
+                entry={e}
+                open={expanded.has(e.image)}
+                onToggle={() => toggle(e.image)}
+                onApply={
+                  e.kind === "semver" && e.candidate
+                    ? () => applyMany([e])
+                    : undefined
+                }
+                applying={applyingImages.has(e.image)}
+                selectable={e.kind === "semver" && !!e.candidate}
+                checked={selected.has(e.image)}
+                onCheck={() => toggleSelect(e.image)}
+                disabled={busy}
+              />
+            ))}
+          </ul>
+        </div>
       )}
 
       {current.length > 0 && (
@@ -199,16 +276,34 @@ function UpdateRow({
   onToggle,
   onApply,
   applying,
+  selectable,
+  checked,
+  onCheck,
+  disabled,
 }: {
   entry: UpdateEntry;
   open: boolean;
   onToggle: () => void;
   onApply?: () => void;
   applying?: boolean;
+  selectable?: boolean;
+  checked?: boolean;
+  onCheck?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <li className="rounded-lg border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center gap-2 pr-3">
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={!!checked}
+          onChange={onCheck}
+          disabled={disabled}
+          aria-label={`Select ${entry.image}`}
+          className="ml-3 accent-hive-500"
+        />
+      )}
       <button
         onClick={onToggle}
         className="flex flex-1 items-center gap-3 px-4 py-2.5 text-left"
@@ -248,7 +343,7 @@ function UpdateRow({
         {onApply && (
           <button
             onClick={onApply}
-            disabled={applying}
+            disabled={applying || disabled}
             className="shrink-0 rounded-lg bg-hive-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-hive-500 disabled:opacity-50"
           >
             {applying ? "Updating…" : "Update & redeploy"}

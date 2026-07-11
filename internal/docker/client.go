@@ -106,6 +106,36 @@ func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, follow 
 	return rc, tty, nil
 }
 
+// declaredHostPorts reads a container's configured host port bindings via
+// inspect (HostConfig.PortBindings) — available even when the container is
+// stopped, unlike the port list from ContainerList. Best-effort: returns nil on
+// any error.
+func (c *Client) declaredHostPorts(ctx context.Context, id string) []Port {
+	info, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil || info.HostConfig == nil {
+		return nil
+	}
+	var out []Port
+	for port, bindings := range info.HostConfig.PortBindings {
+		for _, b := range bindings {
+			if b.HostPort == "" {
+				continue
+			}
+			hp, err := strconv.Atoi(b.HostPort)
+			if err != nil || hp <= 0 || hp > 65535 {
+				continue
+			}
+			out = append(out, Port{
+				IP:      b.HostIP,
+				Public:  uint16(hp),
+				Private: uint16(port.Int()),
+				Type:    port.Proto(),
+			})
+		}
+	}
+	return out
+}
+
 // ImageRepoDigest returns the local image's registry manifest digest
 // ("sha256:…") for imageRef, from its RepoDigests. This is what the registry's
 // Docker-Content-Digest is compared against for the mutable-tag update path.
@@ -166,8 +196,20 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			name = strings.TrimPrefix(ct.Names[0], "/")
 		}
 		ports := make([]Port, 0, len(ct.Ports))
+		hasPublished := false
 		for _, p := range ct.Ports {
 			ports = append(ports, Port{IP: p.IP, Public: p.PublicPort, Private: p.PrivatePort, Type: p.Type})
+			if p.PublicPort != 0 {
+				hasPublished = true
+			}
+		}
+		// A stopped container reports no *published* ports in the list, so its
+		// dashboard link would vanish while it's down. Recover the declared host
+		// bindings from inspect so a stopped app keeps a clickable URL.
+		if !hasPublished && ct.State != "running" {
+			if declared := c.declaredHostPorts(ctx, ct.ID); len(declared) > 0 {
+				ports = declared
+			}
 		}
 		labels := ct.Labels
 		if labels == nil {
