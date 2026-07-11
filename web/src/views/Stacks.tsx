@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchStacks,
   createStack,
+  deleteStack,
+  renameStack,
   fetchUpdates,
   type Stack,
   type Service,
@@ -122,6 +124,14 @@ export default function Stacks() {
             initialTab={
               createdName === selectedStack.name ? "compose" : "containers"
             }
+            onDeleted={async () => {
+              setSelected(null);
+              await qc.invalidateQueries({ queryKey: ["stacks"] });
+            }}
+            onRenamed={async (newName) => {
+              setSelected(newName);
+              await qc.invalidateQueries({ queryKey: ["stacks"] });
+            }}
           />
         ) : (
           <div className="flex h-full min-h-40 items-center justify-center rounded-xl border border-zinc-800 text-sm text-zinc-600">
@@ -272,95 +282,255 @@ function StackRow({
   );
 }
 
-type DetailTab = "containers" | "logs" | "compose" | "env" | "deploy";
+type DetailTab = "containers" | "compose" | "env";
+type ActionMode = "idle" | "rename" | "delete";
 
 function StackDetail({
   stack,
   initialTab = "containers",
+  onDeleted,
+  onRenamed,
 }: {
   stack: Stack;
   initialTab?: DetailTab;
+  onDeleted: () => void | Promise<void>;
+  onRenamed: (newName: string) => void | Promise<void>;
 }) {
   const managed = stack.origin === "managed";
   const [tab, setTab] = useState<DetailTab>(
-    initialTab === "compose" && !managed ? "containers" : initialTab,
+    initialTab !== "containers" && !managed ? "containers" : initialTab,
   );
-
+  const services = stack.services ?? [];
   const key = stack.name;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800 px-5 py-4">
-        <StatusDot status={stack.status} />
-        <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
-        <OriginBadge origin={stack.origin} />
-        {stack.drifted && <DriftBadge />}
-        <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
-      </div>
-
-      {stack.composeFile && (
-        <div className="border-b border-zinc-800 px-5 py-2 font-mono text-[11px] text-zinc-500">
-          {stack.composeFile}
+    <div className="space-y-4">
+      {/* Header: name + management actions, then deploy buttons under it. */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+          <StatusDot status={stack.status} />
+          <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
+          <OriginBadge origin={stack.origin} />
+          {stack.drifted && <DriftBadge />}
+          <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
+          {managed && (
+            <div className="ml-auto">
+              <StackActions
+                stack={stack}
+                onDeleted={onDeleted}
+                onRenamed={onRenamed}
+              />
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="flex gap-1 border-b border-zinc-800 px-3 pt-2">
-        <Tab active={tab === "containers"} onClick={() => setTab("containers")}>
-          Containers
-        </Tab>
-        <Tab active={tab === "logs"} onClick={() => setTab("logs")}>
-          Logs
-        </Tab>
-        {managed && (
-          <Tab active={tab === "compose"} onClick={() => setTab("compose")}>
-            Compose
-          </Tab>
-        )}
-        {managed && (
-          <Tab active={tab === "env"} onClick={() => setTab("env")}>
-            Env
-          </Tab>
-        )}
-        {managed && (
-          <Tab active={tab === "deploy"} onClick={() => setTab("deploy")}>
-            Deploy
-          </Tab>
-        )}
-      </div>
-
-      {tab === "compose" && managed ? (
-        <ComposeEditor key={key} stack={stack.name} />
-      ) : tab === "env" && managed ? (
-        <EnvEditor key={key} stack={stack.name} />
-      ) : tab === "deploy" && managed ? (
-        <DeployConsole key={key} stack={stack.name} />
-      ) : tab === "containers" ? (
-        <div className="px-5 py-4">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-zinc-500">
-                  <th className="pb-2 pr-4 font-medium">Service</th>
-                  <th className="pb-2 pr-4 font-medium">Image</th>
-                  <th className="pb-2 pr-4 font-medium">State</th>
-                  <th className="pb-2 font-medium">Ports</th>
-                </tr>
-              </thead>
-              <tbody className="align-top">
-                {stack.services.map((svc) => (
-                  <ServiceRow key={svc.name} svc={svc} />
-                ))}
-              </tbody>
-            </table>
+        {stack.composeFile && (
+          <div className="border-t border-zinc-800 px-5 py-2 font-mono text-[11px] text-zinc-500">
+            {stack.composeFile}
           </div>
+        )}
+
+        {managed && (
+          <div className="border-t border-zinc-800">
+            <DeployConsole key={key} stack={stack.name} />
+          </div>
+        )}
+      </div>
+
+      {/* Two columns: config tabs on the left, always-on logs on the right. */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+          <div className="flex gap-1 border-b border-zinc-800 px-3 pt-2">
+            <Tab active={tab === "containers"} onClick={() => setTab("containers")}>
+              Containers
+            </Tab>
+            {managed && (
+              <Tab active={tab === "compose"} onClick={() => setTab("compose")}>
+                Compose
+              </Tab>
+            )}
+            {managed && (
+              <Tab active={tab === "env"} onClick={() => setTab("env")}>
+                Env
+              </Tab>
+            )}
+          </div>
+
+          {tab === "compose" && managed ? (
+            <ComposeEditor key={key} stack={stack.name} />
+          ) : tab === "env" && managed ? (
+            <EnvEditor key={key} stack={stack.name} />
+          ) : (
+            <div className="px-5 py-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-zinc-500">
+                      <th className="pb-2 pr-4 font-medium">Service</th>
+                      <th className="pb-2 pr-4 font-medium">Image</th>
+                      <th className="pb-2 pr-4 font-medium">State</th>
+                      <th className="pb-2 font-medium">Ports</th>
+                    </tr>
+                  </thead>
+                  <tbody className="align-top">
+                    {services.map((svc) => (
+                      <ServiceRow key={svc.name} svc={svc} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
-        <LogsPanel
-          key={key}
-          stack={stack.name}
-          services={stack.services.map((s) => s.name)}
-        />
-      )}
+
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+          <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+            Logs
+          </div>
+          <LogsPanel
+            key={key}
+            stack={stack.name}
+            services={services.map((s) => s.name)}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// StackActions holds the rename + delete controls for a managed stack. Rename
+// is blocked while the stack is running (its compose project name can't change
+// without orphaning containers); delete stops it first, then removes the dir.
+function StackActions({
+  stack,
+  onDeleted,
+  onRenamed,
+}: {
+  stack: Stack;
+  onDeleted: () => void | Promise<void>;
+  onRenamed: (newName: string) => void | Promise<void>;
+}) {
+  const [mode, setMode] = useState<ActionMode>("idle");
+  const [newName, setNewName] = useState(stack.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const running = stack.status === "running" || stack.status === "partial";
+
+  function reset() {
+    setMode("idle");
+    setError(null);
+    setNewName(stack.name);
+  }
+
+  async function doRename(e: React.FormEvent) {
+    e.preventDefault();
+    const target = newName.trim();
+    if (!target || target === stack.name) return reset();
+    setBusy(true);
+    setError(null);
+    try {
+      await renameStack(stack.name, target);
+      await onRenamed(target);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed.");
+      setBusy(false);
+    }
+  }
+
+  async function doDelete() {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteStack(stack.name);
+      await onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed.");
+      setBusy(false);
+    }
+  }
+
+  if (mode === "rename") {
+    return (
+      <form onSubmit={doRename} className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && reset()}
+            className="w-40 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs outline-none focus:border-accent-500"
+          />
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-md bg-accent-600 px-2 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
+          >
+            {busy ? "…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={reset}
+            className="rounded-md px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            ✕
+          </button>
+        </div>
+        {error && <span className="max-w-64 text-right text-[11px] text-red-400">{error}</span>}
+      </form>
+    );
+  }
+
+  if (mode === "delete") {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-400">
+            Delete <span className="font-medium text-zinc-200">{stack.name}</span>?
+            {running && " Containers will be stopped first."}
+          </span>
+          <button
+            onClick={doDelete}
+            disabled={busy}
+            className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-400 transition hover:bg-red-500/20 disabled:opacity-40"
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+          <button
+            onClick={reset}
+            disabled={busy}
+            className="rounded-md px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            Cancel
+          </button>
+        </div>
+        <span className="max-w-72 text-right text-[11px] text-zinc-600">
+          {error ? (
+            <span className="text-red-400">{error}</span>
+          ) : (
+            "Removes the stack directory and its compose file. This can't be undone."
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => setMode("rename")}
+        disabled={running}
+        title={running ? "Stop the stack first to rename it" : "Rename this stack"}
+        className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Rename
+      </button>
+      <button
+        onClick={() => setMode("delete")}
+        title="Delete this stack"
+        className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 transition hover:border-red-500/40 hover:text-red-400"
+      >
+        Delete
+      </button>
     </div>
   );
 }

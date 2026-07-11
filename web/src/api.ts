@@ -222,6 +222,26 @@ export async function createStack(name: string): Promise<CreatedStack> {
   return (await res.json()) as CreatedStack;
 }
 
+// deleteStack stops any running containers, then removes the stack's directory
+// under STACKS_DIR. Destructive and irreversible.
+export async function deleteStack(name: string): Promise<void> {
+  await mutate(`/api/stacks/${encodeURIComponent(name)}`, "DELETE");
+}
+
+// renameStack renames a managed stack's directory. The stack must be stopped
+// first (a running project's name can't change without orphaning containers).
+export async function renameStack(
+  name: string,
+  newName: string,
+): Promise<CreatedStack> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(name)}/rename`,
+    "POST",
+    { newName },
+  );
+  return (await res.json()) as CreatedStack;
+}
+
 // ---- Compose file editing ----
 
 export interface ComposeFile {

@@ -58,6 +58,16 @@ func (s *Store) ServiceIconOverrides() (map[string]map[string]string, error) {
 	return out, rows.Err()
 }
 
+// RenameStackPrefs moves any persisted per-service prefs (hidden, custom icon)
+// from an old stack name to a new one, so a renamed stack keeps its settings.
+func (s *Store) RenameStackPrefs(oldName, newName string) error {
+	_, err := s.db.Exec(`UPDATE service_prefs SET stack = ? WHERE stack = ?`, newName, oldName)
+	if err != nil {
+		return fmt.Errorf("rename stack prefs: %w", err)
+	}
+	return nil
+}
+
 // ServiceHiddenOverrides loads all persisted hide/unhide overrides, keyed
 // stack -> service -> hidden.
 func (s *Store) ServiceHiddenOverrides() (map[string]map[string]bool, error) {
