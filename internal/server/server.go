@@ -84,6 +84,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Post("/system/prune", api.prune)
 			r.Get("/settings", api.settings)
 			r.Put("/settings", api.updateSettings)
+			r.Get("/app/update", api.appUpdate)
+			r.Post("/app/update", api.selfUpdate)
 			r.Get("/updates", api.listUpdates)
 			r.Post("/updates/check", api.checkUpdates)
 			r.Put("/updates/ignore", api.setIgnore)
@@ -115,7 +117,9 @@ type api struct {
 	runner  *compose.Runner
 	checker *updates.Checker
 
-	checking atomic.Bool // guards against concurrent update-check runs
+	checking     atomic.Bool // guards against concurrent update-check runs
+	selfUpdating atomic.Bool // guards against concurrent self-updates
+	selfCheck    selfCheckCache
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {

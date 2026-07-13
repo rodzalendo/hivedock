@@ -462,6 +462,27 @@ export async function saveSettings(patch: {
 }
 
 export const fetchHealth = () => getJSON<Health>("/api/health");
+
+// ---- HiveDock self-update ----
+
+export interface AppUpdate {
+  current: string;
+  candidate?: string;
+  hasUpdate: boolean;
+  checkable: boolean; // false for dev/edge builds
+  notesUrl?: string;
+}
+
+// fetchAppUpdate reports whether a newer HiveDock release is published
+// (server-side cached; the UI calls it on every page load).
+export const fetchAppUpdate = () => getJSON<AppUpdate>("/api/app/update");
+
+// selfUpdate asks the server to replace its own container with the newest
+// image (via a detached helper). 202 means the swap started; poll /api/health
+// until the version changes.
+export async function selfUpdate(): Promise<void> {
+  await mutate("/api/app/update", "POST");
+}
 export const fetchStacks = () => getJSON<Stack[]>("/api/stacks");
 export const fetchStack = (name: string) =>
   getJSON<Stack>(`/api/stacks/${encodeURIComponent(name)}`);

@@ -67,6 +67,13 @@ function mockApi() {
           authenticated: true,
         });
       }
+      if (url.includes("/api/app/update")) {
+        return jsonResponse({
+          current: "test",
+          hasUpdate: false,
+          checkable: false,
+        });
+      }
       if (url.includes("/api/health")) {
         return jsonResponse({
           status: "ok",
@@ -114,12 +121,14 @@ test("navigating to Stacks shows the stacks list", async () => {
   expect(screen.getByText("Managed")).toBeInTheDocument();
 });
 
-test("sidebar shows backend health status", async () => {
+test("sidebar shows backend health and version", async () => {
   mockApi();
   renderApp();
 
-  // The old Status page moved into the sidebar footer.
+  // The old Status page moved into the sidebar footer; the version is its
+  // own always-visible line (turns into an update pill when one exists).
   await waitFor(() =>
-    expect(screen.getByText(/Backend ok · vtest/)).toBeInTheDocument(),
+    expect(screen.getByText(/Backend ok/)).toBeInTheDocument(),
   );
+  await waitFor(() => expect(screen.getByText("vtest")).toBeInTheDocument());
 });
