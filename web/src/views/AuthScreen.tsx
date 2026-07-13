@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { setupAdmin, login } from "../api";
+import { LogoMark } from "../components/icons";
 
 type Mode = "setup" | "login";
 
@@ -47,11 +48,11 @@ export default function AuthScreen({
         onSubmit={submit}
         className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-900/50 p-8 shadow-xl"
       >
-        <div className="mb-6 flex items-center gap-2">
-          <span className="text-2xl" aria-hidden>
-            🐝
+        <div className="mb-6 flex items-center gap-2.5">
+          <LogoMark />
+          <span className="font-mono text-[15px] font-semibold tracking-[0.02em] text-zinc-50">
+            hivedock
           </span>
-          <span className="text-lg font-semibold tracking-tight">HiveDock</span>
         </div>
 
         <h1 className="mb-1 text-base font-medium">

@@ -172,15 +172,17 @@ export default function Updates() {
         <div className="flex items-center gap-3">
           {note && (
             <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-              {(busy || checking) && (
-                <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />
-              )}
+              {busy && <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />}
               {note}
             </span>
           )}
           {!note && lastChecked && (
             <span
-              className="text-xs text-zinc-600"
+              className={`text-xs ${
+                timeAgo(lastChecked) === "just now"
+                  ? "text-green-400"
+                  : "text-zinc-600"
+              }`}
               title={lastChecked.toLocaleString()}
             >
               Last checked {timeAgo(lastChecked)}
@@ -189,8 +191,13 @@ export default function Updates() {
           <button
             onClick={onCheck}
             disabled={checking}
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-600 hover:bg-zinc-800 disabled:opacity-50"
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+              checking
+                ? "border-hive-500/60 bg-hive-500/10 text-hive-400"
+                : "border-zinc-700 text-zinc-200 hover:border-zinc-600 hover:bg-zinc-800"
+            }`}
           >
+            {checking && <SpinnerIcon className="h-3.5 w-3.5" />}
             {checking ? "Checking…" : "Check now"}
           </button>
         </div>

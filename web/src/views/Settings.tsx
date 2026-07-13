@@ -172,10 +172,12 @@ function IntervalSection({
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <h3 className="mb-1 text-sm font-medium text-zinc-200">Update checks</h3>
+      <h3 className="mb-1 text-sm font-medium text-zinc-200">
+        Automatic update check
+      </h3>
       <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
         How often HiveDock checks registries for newer images in the
-        background. "Check now" on the Updates page always works regardless.
+        background.
       </p>
       <div className="flex items-center gap-3">
         <select

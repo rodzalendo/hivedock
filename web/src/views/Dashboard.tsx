@@ -12,7 +12,7 @@ import {
 } from "../api";
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
-import { ChevronsDownIcon, EyeIcon, EyeOffIcon, ImageIcon } from "../components/icons";
+import { ChevronsDownIcon, EyeIcon, EyeOffIcon, PencilIcon } from "../components/icons";
 
 // The pool every card lives in unless the user (or a compose label) says
 // otherwise. Outside of Customize mode it renders with no header at all —
@@ -819,25 +819,11 @@ function Card({
           <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
         )}
 
-        {subs.length > 0 && (
-          <button
-            onClick={() => setSubOpen((v) => !v)}
-            title={`${subs.length} more container${subs.length === 1 ? "" : "s"} in this stack`}
-            className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300 ${
-              subOpen ? "text-zinc-300" : ""
-            }`}
-          >
-            {subs.length}
-            <ChevronsDownIcon
-              className={`h-3.5 w-3.5 transition-transform ${subOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-        )}
-
-        {/* Edit/hide/ports live in a hover overlay so they don't reserve
-            width — the card title keeps the full row when not hovered. */}
+        {/* Edit/hide/ports only render on hover so they don't reserve width —
+            the card title keeps the full row, and they appear to the LEFT of
+            the expander so it is never covered. */}
         {!editing && (
-          <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-zinc-700/60 bg-zinc-900 px-1 py-0.5 shadow-lg group-hover:flex">
+          <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
             {entry.ports && entry.ports.length > 1 && (
               <div className="relative">
                 <button
@@ -877,6 +863,21 @@ function Card({
               )}
             </button>
           </div>
+        )}
+
+        {subs.length > 0 && (
+          <button
+            onClick={() => setSubOpen((v) => !v)}
+            title={`${subs.length} more container${subs.length === 1 ? "" : "s"} in this stack`}
+            className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300 ${
+              subOpen ? "text-zinc-300" : ""
+            }`}
+          >
+            {subs.length}
+            <ChevronsDownIcon
+              className={`h-3.5 w-3.5 transition-transform ${subOpen ? "rotate-180" : ""}`}
+            />
+          </button>
         )}
       </div>
 
@@ -965,7 +966,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
         className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
         title="Edit name & icon"
       >
-        <ImageIcon className="h-4 w-4" />
+        <PencilIcon className="h-4 w-4" />
       </button>
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
