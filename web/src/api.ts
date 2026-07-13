@@ -239,7 +239,14 @@ export async function logout(): Promise<void> {
 
 // ---- Stack mutations ----
 
-export type StackAction = "up" | "down" | "restart" | "pull" | "stop" | "recreate";
+export type StackAction =
+  | "up"
+  | "down"
+  | "restart"
+  | "pull"
+  | "stop"
+  | "recreate"
+  | "update"; // up -d --pull always: apply a moved digest on a latest-style tag
 
 export interface DeployAck {
   id: string;

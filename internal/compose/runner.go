@@ -17,12 +17,13 @@ const (
 	ActionPull     Action = "pull"     // pull images
 	ActionStop     Action = "stop"     // stop without removing
 	ActionRecreate Action = "recreate" // up -d --force-recreate: rebuild containers from the file even when compose thinks nothing changed (clears stubborn drift)
+	ActionUpdate   Action = "update"   // up -d --pull always: pull newer images (moved digests on latest-style tags) and recreate what changed
 )
 
 // Valid reports whether s names a supported action.
 func (a Action) Valid() bool {
 	switch a {
-	case ActionUp, ActionDown, ActionRestart, ActionPull, ActionStop, ActionRecreate:
+	case ActionUp, ActionDown, ActionRestart, ActionPull, ActionStop, ActionRecreate, ActionUpdate:
 		return true
 	default:
 		return false
@@ -124,6 +125,8 @@ func subcommandArgs(a Action) []string {
 		return []string{"stop"}
 	case ActionRecreate:
 		return []string{"up", "-d", "--force-recreate"}
+	case ActionUpdate:
+		return []string{"up", "-d", "--pull", "always"}
 	default:
 		return nil
 	}

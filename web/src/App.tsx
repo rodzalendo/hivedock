@@ -208,62 +208,93 @@ function VersionLine() {
           <span aria-hidden>→</span>
           {data.candidate}
         </button>
+      ) : data.checkable ? (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="text-[11px] text-zinc-600 transition hover:text-zinc-400"
+          title="HiveDock version — click for update status"
+        >
+          {label}
+        </button>
       ) : (
         <span
           className="text-[11px] text-zinc-600"
-          title={
-            data.checkable
-              ? "HiveDock version — up to date"
-              : `Rolling ${data.current} build — update checks and one-click updates need a release build (the :latest image)`
-          }
+          title={`Rolling ${data.current} build — update checks and one-click updates need a release build (the :latest image)`}
         >
           {label}
         </span>
       )}
 
-      {open && data.hasUpdate && (
+      {open && (
         <div className="absolute bottom-7 left-0 z-30 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
-          <h4 className="text-xs font-semibold text-zinc-100">
-            Update HiveDock
-          </h4>
-          <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
-            {data.current} → {data.candidate}. Pulls the new image and
-            recreates the container; this page reconnects by itself
-            (~30&nbsp;seconds).
-          </p>
-          {data.notesUrl && (
-            <a
-              href={data.notesUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1.5 inline-block text-[11px] text-accent-500 hover:underline"
-            >
-              Release notes ↗
-            </a>
-          )}
-          <div className="mt-2.5 flex items-center gap-2">
-            <button
-              onClick={() => void startUpdate()}
-              disabled={phase === "updating"}
-              className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
-            >
-              {phase === "updating" ? "Updating…" : "Update now"}
-            </button>
-            {phase !== "updating" && (
-              <button
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+          {data.hasUpdate ? (
+            <>
+              <h4 className="text-xs font-semibold text-zinc-100">
+                Update HiveDock
+              </h4>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">
+                {data.current} → {data.candidate}. Pulls the new image and
+                recreates the container; this page reconnects by itself
+                (~30&nbsp;seconds).
+              </p>
+              {data.notesUrl && (
+                <a
+                  href={data.notesUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1.5 inline-block text-[11px] text-accent-500 hover:underline"
+                >
+                  Release notes ↗
+                </a>
+              )}
+              <div className="mt-2.5 flex items-center gap-2">
+                <button
+                  onClick={() => void startUpdate()}
+                  disabled={phase === "updating"}
+                  className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
+                >
+                  {phase === "updating" ? "Updating…" : "Update now"}
+                </button>
+                {phase !== "updating" && (
+                  <button
+                    onClick={() => setOpen(false)}
+                    className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+                  >
+                    Later
+                  </button>
+                )}
+              </div>
+              {phase === "updating" && (
+                <p className="mt-2 text-[11px] text-zinc-500">
+                  Swapping containers — waiting for the new version…
+                </p>
+              )}
+              {error && (
+                <p className="mt-2 text-[11px] text-red-400">{error}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <h4 className="text-xs font-semibold text-zinc-100">
+                HiveDock {label}
+              </h4>
+              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-green-400">
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-green-500"
+                  aria-hidden
+                />
+                Up to date — newest release. Checked on page load.
+              </p>
+              <a
+                href={`https://github.com/rodzalendo/hivedock/releases/tag/v${data.current}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1.5 inline-block text-[11px] text-accent-500 hover:underline"
               >
-                Later
-              </button>
-            )}
-          </div>
-          {phase === "updating" && (
-            <p className="mt-2 text-[11px] text-zinc-500">
-              Swapping containers — waiting for the new version…
-            </p>
+                Release notes ↗
+              </a>
+            </>
           )}
-          {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
         </div>
       )}
     </div>

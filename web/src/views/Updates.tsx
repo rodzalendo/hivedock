@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUpdates,
@@ -121,6 +121,46 @@ export default function Updates() {
     applicable.length > 0 && applicable.every((e) => selected.has(e.image));
   function toggleSelectAll() {
     setSelected(allSelected ? new Set() : new Set(applicable.map((e) => e.image)));
+  }
+
+  // Digest updates (a latest-style tag whose digest moved) can't be applied by
+  // rewriting the tag — the fix is `compose up --pull always` on each stack
+  // using the image. Track those stacks and re-check once their deploys end,
+  // which confirms the new digest and clears the row spinners.
+  const pendingStacks = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const onDeploy = (ev: Event) => {
+      const msg = (ev as CustomEvent).detail as {
+        type: string;
+        payload?: { stack?: string };
+      };
+      if (msg.type !== "deploy:end" || !msg.payload?.stack) return;
+      if (!pendingStacks.current.delete(msg.payload.stack)) return;
+      if (pendingStacks.current.size === 0) {
+        checkUpdates().catch(() => {});
+      }
+    };
+    window.addEventListener("hivedock:deploy", onDeploy);
+    return () => window.removeEventListener("hivedock:deploy", onDeploy);
+  }, []);
+
+  async function applyDigest(e: UpdateEntry) {
+    if (busy) return;
+    setApplyingImages((prev) => new Set(prev).add(e.image));
+    setNote(null);
+    try {
+      const stacks = [...new Set(e.usedBy.map((u) => u.stack))];
+      for (const s of stacks) {
+        pendingStacks.current.add(s);
+        await runStackAction(s, "update");
+      }
+      setNote("Pulling the new image & redeploying — this can take a minute…");
+      // Cleared by the updates:changed event after the post-deploy re-check.
+      window.setTimeout(() => setApplyingImages(new Set()), 180_000);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Update failed.");
+      setApplyingImages(new Set());
+    }
   }
 
   // Rewrite every selected update's compose files, redeploy each affected stack
@@ -274,7 +314,9 @@ export default function Updates() {
                 onApply={
                   e.kind === "semver" && e.candidate
                     ? () => applyMany([e])
-                    : undefined
+                    : e.kind === "digest"
+                      ? () => applyDigest(e)
+                      : undefined
                 }
                 applying={applyingImages.has(e.image)}
                 selectable={e.kind === "semver" && !!e.candidate}
@@ -440,7 +482,11 @@ function UpdateRow({
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
           >
             {applying && <SpinnerIcon className="h-3 w-3" />}
-            {applying ? "Updating…" : "Update & redeploy"}
+            {applying
+              ? "Updating…"
+              : entry.kind === "digest"
+                ? "Pull & redeploy"
+                : "Update & redeploy"}
           </button>
         )}
         {onIgnore && (

@@ -6,7 +6,7 @@ import (
 )
 
 func TestActionValid(t *testing.T) {
-	for _, a := range []Action{ActionUp, ActionDown, ActionRestart, ActionPull, ActionStop} {
+	for _, a := range []Action{ActionUp, ActionDown, ActionRestart, ActionPull, ActionStop, ActionRecreate, ActionUpdate} {
 		if !a.Valid() {
 			t.Errorf("%q should be valid", a)
 		}
@@ -23,6 +23,7 @@ func TestSubcommandArgs(t *testing.T) {
 		ActionRestart: {"restart"},
 		ActionPull:    {"pull"},
 		ActionStop:    {"stop"},
+		ActionUpdate:  {"up", "-d", "--pull", "always"},
 	}
 	for act, want := range cases {
 		if got := subcommandArgs(act); !reflect.DeepEqual(got, want) {
