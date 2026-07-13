@@ -237,6 +237,37 @@ function NewStack({
   );
 }
 
+// imageTag extracts the tag from an image reference, guarding against the
+// registry-port colon (registry:5000/app) and digests (app@sha256:…).
+function imageTag(image: string): string | null {
+  const ref = image.split("@")[0];
+  const lastColon = ref.lastIndexOf(":");
+  const lastSlash = ref.lastIndexOf("/");
+  if (lastColon > lastSlash) return ref.slice(lastColon + 1);
+  return null; // no tag → implicit :latest
+}
+
+// A version-looking tag starts with a digit or a "v" + digit ("5.1.2",
+// "v1.135.0", "11.4.12"); "latest", "stable", "alpine" don't qualify.
+const isVersionTag = (tag: string) => /^v?\d/.test(tag);
+
+// stackVersion summarizes a stack's version for the header: the primary
+// service's tag (name matching the stack, e.g. immich-server → immich) when
+// there is one, else a single version shared by every service, else null.
+function stackVersion(stack: Stack): string | null {
+  const tagged = stack.services
+    .map((s) => ({ name: s.name.toLowerCase(), tag: imageTag(s.image) }))
+    .filter((s): s is { name: string; tag: string } => !!s.tag && isVersionTag(s.tag));
+  if (tagged.length === 0) return null;
+  const slug = stack.name.toLowerCase();
+  const primary =
+    tagged.find((s) => s.name === slug) ??
+    tagged.find((s) => s.name.startsWith(slug));
+  if (primary) return primary.tag;
+  const distinct = new Set(tagged.map((s) => s.tag));
+  return distinct.size === 1 ? tagged[0].tag : null;
+}
+
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-5">
@@ -306,6 +337,7 @@ function StackDetail({
   const managed = stack.origin === "managed";
   const services = stack.services ?? [];
   const driftedServices = services.filter((s) => s.drifted).map((s) => s.name);
+  const version = stackVersion(stack);
   const key = stack.name;
 
   return (
@@ -314,7 +346,19 @@ function StackDetail({
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <StatusDot status={stack.status} />
-          <h2 className="text-base font-semibold text-zinc-100">{stack.name}</h2>
+          <div className="flex flex-col">
+            <h2 className="text-base font-semibold leading-tight text-zinc-100">
+              {stack.name}
+            </h2>
+            {version && (
+              <span
+                className="font-mono text-[11px] text-zinc-500"
+                title="Version (from the image tag)"
+              >
+                {version}
+              </span>
+            )}
+          </div>
           <OriginBadge origin={stack.origin} />
           {stack.drifted && (
             <DriftInfo
