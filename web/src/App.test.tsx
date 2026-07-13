@@ -69,9 +69,9 @@ function mockApi() {
       }
       if (url.includes("/api/app/update")) {
         return jsonResponse({
-          current: "test",
+          current: "1.2.3",
           hasUpdate: false,
-          checkable: false,
+          checkable: true,
         });
       }
       if (url.includes("/api/health")) {
@@ -130,5 +130,5 @@ test("sidebar shows backend health and version", async () => {
   await waitFor(() =>
     expect(screen.getByText(/Backend ok/)).toBeInTheDocument(),
   );
-  await waitFor(() => expect(screen.getByText("vtest")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("v1.2.3")).toBeInTheDocument());
 });

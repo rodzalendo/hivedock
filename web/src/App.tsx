@@ -192,6 +192,10 @@ function VersionLine() {
   }
 
   if (!data) return null;
+  // Release builds report a number ("0.2.0" -> "v0.2.0"); edge/dev builds
+  // report a word — show it as-is, with a hint that update checks need a
+  // release build.
+  const label = /^\d/.test(data.current) ? `v${data.current}` : data.current;
   return (
     <div ref={ref} className="relative px-1">
       {data.hasUpdate ? (
@@ -200,13 +204,20 @@ function VersionLine() {
           className="flex items-center gap-1.5 rounded-full border border-hive-500/40 bg-hive-500/10 px-2 py-0.5 text-[11px] font-medium text-hive-500 transition hover:bg-hive-500/20"
           title={`HiveDock ${data.candidate} is available`}
         >
-          v{data.current}
+          {label}
           <span aria-hidden>→</span>
           {data.candidate}
         </button>
       ) : (
-        <span className="text-[11px] text-zinc-600" title="HiveDock version">
-          v{data.current}
+        <span
+          className="text-[11px] text-zinc-600"
+          title={
+            data.checkable
+              ? "HiveDock version — up to date"
+              : `Rolling ${data.current} build — update checks and one-click updates need a release build (the :latest image)`
+          }
+        >
+          {label}
         </span>
       )}
 
