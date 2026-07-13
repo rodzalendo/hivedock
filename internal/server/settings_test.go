@@ -59,11 +59,11 @@ func TestSettingsGetReflectsConfig(t *testing.T) {
 	}
 }
 
-func TestSettingsWebhookRoundTrip(t *testing.T) {
-	h := dbHandler(t, config.Config{StacksDir: "/opt/stacks"})
+func TestSettingsCheckIntervalRoundTrip(t *testing.T) {
+	h := dbHandler(t, config.Config{StacksDir: "/opt/stacks", CheckInterval: 30 * time.Minute})
 
-	// Save a webhook URL.
-	body, _ := json.Marshal(map[string]string{"webhookUrl": "https://hooks.example/x"})
+	// Save a new interval.
+	body, _ := json.Marshal(map[string]string{"checkInterval": "6h"})
 	req := httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -73,68 +73,17 @@ func TestSettingsWebhookRoundTrip(t *testing.T) {
 	}
 	var got settingsResponse
 	json.Unmarshal(rec.Body.Bytes(), &got)
-	if got.WebhookURL != "https://hooks.example/x" {
-		t.Errorf("webhookUrl = %q", got.WebhookURL)
+	if got.CheckInterval != "6h" {
+		t.Errorf("checkInterval = %q, want 6h", got.CheckInterval)
 	}
 
-	// Reject a non-URL.
-	body, _ = json.Marshal(map[string]string{"webhookUrl": "not-a-url"})
+	// Reject a too-short interval.
+	body, _ = json.Marshal(map[string]string{"checkInterval": "1m"})
 	req = httptest.NewRequest(http.MethodPut, "/api/settings", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("invalid url status = %d, want 400", rec.Code)
-	}
-}
-
-func TestWebhookTest(t *testing.T) {
-	h := dbHandler(t, config.Config{StacksDir: "/opt/stacks"})
-
-	// A receiving endpoint that records the payload.
-	var gotBody []byte
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer target.Close()
-
-	body, _ := json.Marshal(map[string]string{"url": target.URL})
-	req := httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(gotBody, &payload); err != nil {
-		t.Fatalf("target got non-JSON payload: %v", err)
-	}
-	if payload["event"] != "test" {
-		t.Errorf("payload event = %v, want test", payload["event"])
-	}
-
-	// No URL anywhere -> 400.
-	req = httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader([]byte(`{}`)))
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("no-url status = %d, want 400", rec.Code)
-	}
-
-	// Upstream failure -> 502.
-	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	defer failing.Close()
-	body, _ = json.Marshal(map[string]string{"url": failing.URL})
-	req = httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadGateway {
-		t.Fatalf("failing-upstream status = %d, want 502", rec.Code)
+		t.Fatalf("too-short interval status = %d, want 400", rec.Code)
 	}
 }

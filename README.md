@@ -23,7 +23,7 @@ Most homelabs end up running three separate tools: one to manage compose stacks,
 
 - **Stacks**: every compose stack and stray container in one list, in-browser compose and `.env` editing with server-side validation, deploy / pull / restart / stop with live streamed output, rename and delete with running-state guards, per-service logs, drift detection.
 - **Home**: auto-discovered app grid with icons (dashboard-icons plus custom icon URLs), clickable port links, hide/show per card, groups with custom titles, drag-and-drop arrangement, column count, and name/status sorting.
-- **Updates**: semver-aware tag checking across Docker Hub, ghcr, lscr, and quay, digest checking for `latest`-style tags, one-click update and redeploy (single or bulk), per-image ignore for pinned versions, webhook notifications when new updates appear.
+- **Updates**: semver-aware tag checking across Docker Hub, ghcr, lscr, and quay, digest checking for `latest`-style tags, one-click update and redeploy (single or bulk), per-image ignore for pinned versions.
 - **Ops**: single binary with embedded UI, SQLite for app state only, WebSocket live updates, session auth with CSRF protection, multi-arch images (amd64 and arm64), works in Docker-in-LXC.
 
 <!-- screenshots: add docs/screenshots/stacks.png and updates.png then uncomment
@@ -68,7 +68,6 @@ Everything is configured with environment variables:
 | `AUTH_DISABLED` | `false` | Skip login entirely. Only for trusted LANs. |
 | `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links do not rot. |
 | `CHECK_INTERVAL` | `30m` | Periodic update check cadence. `off` disables it; also editable live in Settings. |
-| `WEBHOOK_URL` | unset | POSTed a JSON payload when new updates are found. Also editable in Settings. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
 ### Auth

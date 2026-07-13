@@ -115,12 +115,6 @@ export interface PruneReport {
 
 // pruneSystem removes dangling images and stale build cache. Never touches
 // tagged images, containers, volumes, or networks.
-// testWebhook fires a sample payload at the given URL (or the saved one when
-// empty) and throws with the server's explanation when delivery fails.
-export async function testWebhook(url: string): Promise<void> {
-  await mutate("/api/settings/webhook/test", "POST", { url });
-}
-
 export async function pruneSystem(): Promise<PruneReport> {
   const res = await mutate("/api/system/prune", "POST");
   return (await res.json()) as PruneReport;
@@ -438,8 +432,6 @@ export interface Settings {
   stacksDir: string;
   dataDir: string;
   checkInterval: string;
-  webhookUrl: string;
-  webhookFromEnv: boolean;
   publicHost: string;
   authDisabled: boolean;
   version: string;
@@ -450,7 +442,6 @@ export const fetchSettings = () => getJSON<Settings>("/api/settings");
 // saveSettings patches the editable settings; omit a field to leave it as-is.
 // checkInterval: "off", a duration like "30m"/"6h", or "" to revert to env.
 export async function saveSettings(patch: {
-  webhookUrl?: string;
   checkInterval?: string;
 }): Promise<Settings> {
   const res = await mutate("/api/settings", "PUT", patch);

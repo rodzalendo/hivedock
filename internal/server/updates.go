@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -158,19 +157,12 @@ func (a *api) setIgnore(w http.ResponseWriter, r *http.Request) {
 }
 
 // runUpdateCheck performs the check (off the request path), persists results,
-// broadcasts updates:changed, and fires the webhook for newly-found updates. It
-// always clears the in-flight guard.
+// and broadcasts updates:changed. It always clears the in-flight guard.
 func (a *api) runUpdateCheck(images []string) {
 	defer a.checking.Store(false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-
-	// Snapshot the prior state so we only webhook on *newly* discovered updates.
-	var prior map[string]updates.Result
-	if a.db != nil {
-		prior, _ = a.db.ImageChecks()
-	}
 
 	a.logger.Info("update check started", "images", len(images))
 	results := a.checker.CheckAll(ctx, images)
@@ -182,66 +174,13 @@ func (a *api) runUpdateCheck(images []string) {
 	}
 
 	updated := 0
-	var fresh []updates.Result
 	for _, r := range results {
-		if !r.HasUpdate {
-			continue
-		}
-		updated++
-		p, existed := prior[r.Image]
-		if !existed || !p.HasUpdate || p.Candidate != r.Candidate || p.LatestDigest != r.LatestDigest {
-			fresh = append(fresh, r)
+		if r.HasUpdate {
+			updated++
 		}
 	}
-	a.logger.Info("update check finished", "images", len(images), "updates", updated, "new", len(fresh))
+	a.logger.Info("update check finished", "images", len(images), "updates", updated)
 	a.hub.Publish(events.Message{Type: "updates:changed", Payload: map[string]int{"updates": updated}})
-
-	if webhook := a.effectiveWebhookURL(); len(fresh) > 0 && webhook != "" {
-		a.sendWebhook(webhook, fresh)
-	}
-}
-
-// sendWebhook POSTs a JSON payload describing newly-found updates to the
-// configured single webhook URL. Best-effort (logged, never blocks a check).
-func (a *api) sendWebhook(webhookURL string, newUpdates []updates.Result) {
-	type item struct {
-		Image     string `json:"image"`
-		Kind      string `json:"kind"`
-		Current   string `json:"current,omitempty"`
-		Candidate string `json:"candidate,omitempty"`
-		Diff      string `json:"diff,omitempty"`
-	}
-	items := make([]item, 0, len(newUpdates))
-	for _, r := range newUpdates {
-		items = append(items, item{Image: r.Image, Kind: r.Kind, Current: r.Current, Candidate: r.Candidate, Diff: r.Diff})
-	}
-	payload := map[string]any{
-		"event":   "updates_available",
-		"time":    time.Now().UTC().Format(time.RFC3339),
-		"count":   len(items),
-		"updates": items,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		a.logger.Error("webhook: marshal", "err", err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
-	if err != nil {
-		a.logger.Error("webhook: build request", "err", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		a.logger.Warn("webhook: post failed", "err", err)
-		return
-	}
-	defer resp.Body.Close()
-	a.logger.Info("webhook sent", "count", len(items), "status", resp.StatusCode)
 }
 
 // startUpdateScheduler runs periodic update checks. The cadence is re-read

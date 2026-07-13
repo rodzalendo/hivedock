@@ -23,7 +23,6 @@ type Config struct {
 	LogLevel     slog.Level // LOG_LEVEL — debug|info|warn|error
 
 	CheckInterval time.Duration // CHECK_INTERVAL — periodic update check cadence (0 disables)
-	WebhookURL    string        // WEBHOOK_URL — POSTed a JSON payload when new updates are found
 }
 
 // Load reads configuration from the environment, applying defaults suitable for
@@ -38,7 +37,6 @@ func Load() Config {
 		LogLevel:     logLevel(env("LOG_LEVEL", "info")),
 
 		CheckInterval: envDuration("CHECK_INTERVAL", 30*time.Minute),
-		WebhookURL:    env("WEBHOOK_URL", ""),
 	}
 }
 

@@ -64,7 +64,7 @@ Daemon down → managed stacks still show, status `unknown`.
 
 ### 2.2 SQLite scope (app state only)
 
-`settings` (kv: check interval, webhook, etc.), `service_prefs`
+`settings` (kv: check interval, etc.), `service_prefs`
 (`stack,service → hidden` for the homepage unhide toggle), and (Phase 4) cached
 update-check results. **Never** stack definitions.
 

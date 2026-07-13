@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Stacks from "./views/Stacks";
 import Dashboard from "./views/Dashboard";
@@ -6,6 +5,7 @@ import Updates from "./views/Updates";
 import Settings from "./views/Settings";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useLiveUpdates } from "./useLiveUpdates";
+import { useHashRoute, navigate } from "./useHashRoute";
 import {
   fetchAuthStatus,
   fetchHealth,
@@ -35,7 +35,12 @@ const nav: {
 ];
 
 export default function App() {
-  const [view, setView] = useState<View>("home");
+  // The URL hash is the router (#/stacks, #/updates, …), so a refresh stays
+  // on the current page. Unknown/empty hashes land on Home.
+  const route = useHashRoute();
+  const view: View = nav.some((n) => n.id === route[0])
+    ? (route[0] as View)
+    : "home";
   const qc = useQueryClient();
   useLiveUpdates();
 
@@ -68,7 +73,7 @@ export default function App() {
       <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
         <div className="flex items-center justify-between border-b border-zinc-800 py-3 pl-6 pr-3 md:border-b-0 md:py-4">
           <button
-            onClick={() => setView("home")}
+            onClick={() => navigate("home")}
             className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80"
             title="Home"
           >
@@ -86,7 +91,7 @@ export default function App() {
           {nav.map(({ id, label, Icon }) => (
             <button
               key={id}
-              onClick={() => setView(id)}
+              onClick={() => navigate(id)}
               className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
                 view === id
                   ? "bg-zinc-800 text-zinc-50"

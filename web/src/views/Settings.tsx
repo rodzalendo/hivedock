@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchSettings, saveSettings, pruneSystem, testWebhook } from "../api";
+import { fetchSettings, saveSettings, pruneSystem } from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
 
@@ -9,44 +9,6 @@ export default function Settings() {
     queryKey: ["settings"],
     queryFn: fetchSettings,
   });
-
-  const [webhook, setWebhook] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (data) setWebhook(data.webhookUrl);
-  }, [data]);
-
-  async function onSave() {
-    setBusy(true);
-    setNote(null);
-    try {
-      await saveSettings({ webhookUrl: webhook.trim() });
-      await refetch();
-      setNote("Saved.");
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to save.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // onTest fires a sample payload at the URL in the field (not the saved one),
-  // so wiring can be verified before hitting Save.
-  async function onTest() {
-    setTesting(true);
-    setNote(null);
-    try {
-      await testWebhook(webhook.trim());
-      setNote("Test sent — check the receiving service.");
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : "Test failed.");
-    } finally {
-      setTesting(false);
-    }
-  }
 
   if (isLoading) return <p className="text-sm text-zinc-500">Loading…</p>;
   if (isError)
@@ -62,75 +24,6 @@ export default function Settings() {
       <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
         Settings
       </h2>
-
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-          Notifications
-          <HelpTip>
-            When an update check finds a <em>new</em> image update, HiveDock
-            sends an HTTP <span className="font-mono">POST</span> with a JSON
-            body to the URL below — so you can get notified without watching
-            this page. Point it at any service that accepts an incoming webhook
-            (Discord, Slack, ntfy, Gotify, Home Assistant, n8n, …). Leave it
-            blank to disable. It never receives your stacks or credentials —
-            only which images have updates.
-          </HelpTip>
-        </h3>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-zinc-400">
-            Webhook URL
-          </span>
-          <input
-            type="url"
-            value={webhook}
-            onChange={(e) => setWebhook(e.target.value)}
-            placeholder="https://example.com/hook"
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-accent-500"
-          />
-        </label>
-        <details className="mt-2 text-[11px] text-zinc-600">
-          <summary className="cursor-pointer text-zinc-500 hover:text-zinc-400">
-            Example payload
-          </summary>
-          <pre className="mt-1.5 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950 p-2.5 font-mono text-[10.5px] leading-relaxed text-zinc-400">
-{`{
-  "event": "updates_available",
-  "time": "2026-07-11T18:04:00Z",
-  "count": 1,
-  "updates": [
-    { "image": "lscr.io/linuxserver/mariadb:11.4.5",
-      "kind": "semver", "current": "11.4.5",
-      "candidate": "11.4.12", "diff": "patch" }
-  ]
-}`}
-          </pre>
-        </details>
-        {data.webhookFromEnv && (
-          <p className="mt-1.5 text-[11px] text-amber-500/70">
-            Currently set via the WEBHOOK_URL env var (this overrides the field
-            above).
-          </p>
-        )}
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={onSave}
-            disabled={busy || testing}
-            className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
-          >
-            Save
-          </button>
-          <button
-            onClick={onTest}
-            disabled={busy || testing || !webhook.trim()}
-            title="Send a sample payload to the URL above"
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
-          >
-            {testing && <SpinnerIcon className="h-3.5 w-3.5" />}
-            {testing ? "Sending…" : "Send test"}
-          </button>
-          {note && <span className="text-xs text-zinc-500">{note}</span>}
-        </div>
-      </section>
 
       <IntervalSection current={data.checkInterval} onSaved={refetch} />
 

@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { PencilIcon, TrashIcon } from "../components/icons";
 import HostStrip from "../components/HostStrip";
+import { useHashRoute, navigate } from "../useHashRoute";
 import LogsPanel from "../components/LogsPanel";
 import DeployConsole from "../components/DeployConsole";
 import ComposeEditor from "../components/ComposeEditor";
@@ -33,7 +34,12 @@ export default function Stacks() {
     refetchInterval: 30_000,
   });
 
-  const [selected, setSelected] = useState<string | null>(null);
+  // The selected stack lives in the URL (#/stacks/<name>), so a refresh or a
+  // shared link reopens the same stack.
+  const route = useHashRoute();
+  const selected = route[0] === "stacks" ? (route[1] ?? null) : null;
+  const setSelected = (name: string | null) =>
+    name ? navigate("stacks", name) : navigate("stacks");
   const qc = useQueryClient();
 
   // Which stacks have an available image update (drives the row badge).
