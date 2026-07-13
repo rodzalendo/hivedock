@@ -23,7 +23,9 @@ services:
     environment:
       - STACKS_DIR=/opt/stacks
       - DATA_DIR=/app/data
-      - AUTH_DISABLED=true          # LAN test only; behind your firewall
+      # Auth is ON by default: first visit shows a one-time admin setup form.
+      # Uncomment only for a trusted-LAN test box.
+      # - AUTH_DISABLED=true
       - LOG_LEVEL=info
       # Homepage card links are built from this. Set to how you reach the box.
       - PUBLIC_HOST=<pct101-ip>:5002

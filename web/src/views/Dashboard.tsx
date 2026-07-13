@@ -22,11 +22,13 @@ const DEFAULT_GROUP = "Apps";
 const keyOf = (e: HomeEntry) => `${e.stack}/${e.service}`;
 
 // Group columns on wider screens; small screens always stack to one column.
-const columnsClass: Record<number, string> = {
-  1: "columns-1",
-  2: "columns-1 sm:columns-2",
-  3: "columns-1 sm:columns-2 xl:columns-3",
-  4: "columns-1 sm:columns-2 lg:columns-3 xl:columns-4",
+// Each column is a real element (not CSS multicol) so groups can be dropped
+// into a specific column and stay there.
+const gridColsClass: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
+  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
 };
 
 // Tile size presets (the Customize slider): min card width for the ungrouped
@@ -96,12 +98,12 @@ export default function Dashboard() {
 
   const entries = useMemo(() => data ?? [], [data]);
 
-  // Hidden sidecars per stack: shown as a collapsible sub-list under the
-  // stack's visible card instead of disappearing entirely.
-  const hiddenByStack = useMemo(() => {
+  // Hidden and sidecar services per stack: shown as a collapsible sub-list
+  // under the stack's primary card instead of getting their own tile.
+  const subsByStack = useMemo(() => {
     const map = new Map<string, HomeEntry[]>();
     for (const e of entries) {
-      if (!e.hidden) continue;
+      if (!e.hidden && !e.sidecar) continue;
       const arr = map.get(e.stack) ?? [];
       arr.push(e);
       map.set(e.stack, arr);
@@ -113,7 +115,9 @@ export default function Dashboard() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return entries.filter((e) => {
-      if (!showHidden && e.hidden) return false;
+      // Hidden and rolled-up services only surface as cards when the user
+      // asks ("Show all") or searches for them directly.
+      if ((e.hidden || e.sidecar) && !showHidden && !q) return false;
       if (!q) return true;
       return (
         e.name.toLowerCase().includes(q) ||
@@ -179,7 +183,35 @@ export default function Dashboard() {
   const ungrouped = groups.find(([k]) => k === DEFAULT_GROUP)?.[1] ?? [];
   const namedGroups = groups.filter(([k]) => k !== DEFAULT_GROUP);
 
-  const hiddenCount = entries.filter((e) => e.hidden).length;
+  // Distribute named groups across columns: an explicit assignment wins,
+  // everything else fills the emptiest column in display order.
+  const columnized = useMemo(() => {
+    const cols: (readonly [string, HomeEntry[]])[][] = Array.from(
+      { length: columns },
+      () => [],
+    );
+    for (const g of namedGroups) {
+      const want = layout.groupColumns?.[g[0]];
+      let c: number;
+      if (want !== undefined && want >= 0 && want < columns) {
+        c = want;
+      } else {
+        c = 0;
+        for (let i = 1; i < columns; i++) {
+          if (cols[i].length < cols[c].length) c = i;
+        }
+      }
+      cols[c].push(g);
+    }
+    return cols;
+  }, [namedGroups, columns, layout.groupColumns]);
+  const columnOf = useMemo(() => {
+    const m = new Map<string, number>();
+    columnized.forEach((col, i) => col.forEach(([k]) => m.set(k, i)));
+    return m;
+  }, [columnized]);
+
+  const hiddenCount = entries.filter((e) => e.hidden || e.sidecar).length;
   const userGroups = layout.groups ?? [];
 
   function startEdit() {
@@ -191,6 +223,7 @@ export default function Dashboard() {
       cardGroups: { ...(savedLayout?.cardGroups ?? {}) },
       cardOrder: { ...(savedLayout?.cardOrder ?? {}) },
       groupOrder: groups.map(([k]) => k),
+      groupColumns: { ...(savedLayout?.groupColumns ?? {}) },
     });
     setNewGroup("");
     setEditing(true);
@@ -207,6 +240,7 @@ export default function Dashboard() {
       cardGroups: {},
       cardOrder: {},
       groupOrder: [],
+      groupColumns: {},
     });
   }
 
@@ -249,12 +283,17 @@ export default function Dashboard() {
       for (const [g, arr] of Object.entries(d.cardOrder ?? {})) {
         cardOrder[g === from ? next : g] = arr;
       }
+      const groupColumns: Record<string, number> = {};
+      for (const [g, c] of Object.entries(d.groupColumns ?? {})) {
+        groupColumns[g === from ? next : g] = c;
+      }
       return {
         ...d,
         groups: (d.groups ?? []).map((g) => (g === from ? next : g)),
         groupOrder: (d.groupOrder ?? []).map((g) => (g === from ? next : g)),
         cardGroups,
         cardOrder,
+        groupColumns,
       };
     });
   }
@@ -268,12 +307,15 @@ export default function Dashboard() {
       }
       const cardOrder = { ...(d.cardOrder ?? {}) };
       delete cardOrder[name];
+      const groupColumns = { ...(d.groupColumns ?? {}) };
+      delete groupColumns[name];
       return {
         ...d,
         groups: (d.groups ?? []).filter((g) => g !== name),
         groupOrder: (d.groupOrder ?? []).filter((g) => g !== name),
         cardGroups,
         cardOrder,
+        groupColumns,
       };
     });
   }
@@ -328,6 +370,7 @@ export default function Dashboard() {
       return;
     }
     if (d.key === target) return;
+    const targetCol = columnOf.get(target);
     setDraft((prev) => {
       const order = [...(prev.groupOrder ?? [])];
       const fi = order.indexOf(d.key);
@@ -335,8 +378,24 @@ export default function Dashboard() {
       if (fi < 0 || ti < 0) return prev;
       order.splice(fi, 1);
       order.splice(ti, 0, d.key);
-      return { ...prev, groupOrder: order };
+      // Dropping onto a group also adopts that group's column, so the drag
+      // lands where it visually happened.
+      const groupColumns = { ...(prev.groupColumns ?? {}) };
+      if (targetCol !== undefined) groupColumns[d.key] = targetCol;
+      return { ...prev, groupOrder: order, groupColumns };
     });
+  }
+
+  // dropOnColumn pins a dragged group to a specific column (the empty space
+  // of a column is the drop target).
+  function dropOnColumn(col: number) {
+    const d = dragged.current;
+    dragged.current = null;
+    if (!d || d.kind !== "group") return;
+    setDraft((prev) => ({
+      ...prev,
+      groupColumns: { ...(prev.groupColumns ?? {}), [d.key]: col },
+    }));
   }
 
   function dropOnCard(group: string, beforeKey: string) {
@@ -365,7 +424,7 @@ export default function Dashboard() {
               onChange={(e) => setShowHidden(e.target.checked)}
               className="accent-accent-500"
             />
-            Show hidden ({hiddenCount})
+            Show all services ({hiddenCount})
           </label>
         )}
 
@@ -481,8 +540,9 @@ export default function Dashboard() {
       {editing && (
         <p className="text-xs text-zinc-500">
           Drag an app onto a group (or onto another app to set its position —
-          this switches sorting to manual). Drag a group header to reorder
-          groups, rename inline, then Save layout.
+          this switches sorting to manual). Drag a group onto another group to
+          reorder, or into a column&apos;s empty space to move it there. Rename
+          inline, then Save layout.
         </p>
       )}
 
@@ -509,7 +569,7 @@ export default function Dashboard() {
               key={keyOf(e)}
               entry={e}
               tile={tile}
-              hiddenSiblings={hiddenByStack.get(e.stack)}
+              hiddenSiblings={subsByStack.get(e.stack)}
             />
           ))}
         </div>
@@ -561,7 +621,7 @@ export default function Dashboard() {
                   entry={e}
                   editing
                   tile={tile}
-                  hiddenSiblings={hiddenByStack.get(e.stack)}
+                  hiddenSiblings={subsByStack.get(e.stack)}
                 />
               </div>
             ))}
@@ -569,9 +629,20 @@ export default function Dashboard() {
         </section>
       )}
 
-      {namedGroups.length > 0 ? (
-        <div className={`${columnsClass[columns]} gap-4`}>
-          {namedGroups.map(([key, items]) => (
+      {namedGroups.length > 0 || editing ? (
+        <div className={`grid gap-4 ${gridColsClass[columns]}`}>
+          {columnized.map((colGroups, ci) => (
+            <div
+              key={ci}
+              className="min-w-0 space-y-4"
+              onDragOver={(e) => editing && e.preventDefault()}
+              onDrop={(e) => {
+                if (!editing) return;
+                e.preventDefault();
+                dropOnColumn(ci);
+              }}
+            >
+              {colGroups.map(([key, items]) => (
             <section
               key={key}
               draggable={editing}
@@ -580,13 +651,14 @@ export default function Dashboard() {
               onDrop={(e) => {
                 if (!editing) return;
                 e.preventDefault();
+                e.stopPropagation();
                 dropOnGroup(key);
               }}
-              className={`mb-4 break-inside-avoid ${
+              className={
                 editing
                   ? "cursor-grab rounded-xl border border-dashed border-zinc-700 bg-zinc-900/30 p-3"
                   : ""
-              }`}
+              }
             >
               <div className="mb-2 flex items-center gap-2">
                 {editing && (
@@ -641,12 +713,19 @@ export default function Dashboard() {
                       entry={e}
                       editing={editing}
                       tile={tile}
-                      hiddenSiblings={hiddenByStack.get(e.stack)}
+                      hiddenSiblings={subsByStack.get(e.stack)}
                     />
                   </div>
                 ))}
               </div>
             </section>
+              ))}
+              {editing && (
+                <div className="rounded-xl border border-dashed border-zinc-800 p-3 text-center text-[10px] uppercase tracking-wider text-zinc-600">
+                  drop a group here
+                </div>
+              )}
+            </div>
           ))}
         </div>
       ) : null}
@@ -726,7 +805,7 @@ function Card({
         entry.hidden ? "opacity-60" : ""
       }`}
     >
-      <div className={`flex items-center gap-3 ${tile.pad}`}>
+      <div className={`relative flex items-center gap-3 ${tile.pad}`}>
         {clickable ? (
           <a
             href={entry.url}
@@ -740,54 +819,55 @@ function Card({
           <div className="flex min-w-0 flex-1 items-center gap-3">{inner}</div>
         )}
 
-        <div className="flex shrink-0 items-center gap-1">
-          {subs.length > 0 && (
-            <button
-              onClick={() => setSubOpen((v) => !v)}
-              title={`${subs.length} more container${subs.length === 1 ? "" : "s"} in this stack`}
-              className={`flex items-center gap-1 rounded px-1.5 py-1 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300 ${
-                subOpen ? "text-zinc-300" : ""
-              }`}
-            >
-              {subs.length}
-              <ChevronsDownIcon
-                className={`h-3.5 w-3.5 transition-transform ${subOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-          )}
-          {!editing && entry.ports && entry.ports.length > 1 && (
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen((v) => !v)}
-                className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
-                title="Ports"
-              >
-                ⋯
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
-                  {entry.ports.map((p) => (
-                    <a
-                      key={p.label}
-                      href={p.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
-                    >
-                      {p.label}
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {!editing && <CardEditor entry={entry} />}
-          {!editing && (
+        {subs.length > 0 && (
+          <button
+            onClick={() => setSubOpen((v) => !v)}
+            title={`${subs.length} more container${subs.length === 1 ? "" : "s"} in this stack`}
+            className={`flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-300 ${
+              subOpen ? "text-zinc-300" : ""
+            }`}
+          >
+            {subs.length}
+            <ChevronsDownIcon
+              className={`h-3.5 w-3.5 transition-transform ${subOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+        )}
+
+        {/* Edit/hide/ports live in a hover overlay so they don't reserve
+            width — the card title keeps the full row when not hovered. */}
+        {!editing && (
+          <div className="absolute right-1.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg border border-zinc-700/60 bg-zinc-900 px-1 py-0.5 shadow-lg group-hover:flex">
+            {entry.ports && entry.ports.length > 1 && (
+              <div className="relative">
+                <button
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                  title="Ports"
+                >
+                  ⋯
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+                    {entry.ports.map((p) => (
+                      <a
+                        key={p.label}
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                      >
+                        {p.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <CardEditor entry={entry} />
             <button
               onClick={() => toggleHidden.mutate()}
-              className={`rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300 ${
-                entry.hidden ? "" : "opacity-0 group-hover:opacity-100"
-              }`}
+              className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
               title={entry.hidden ? "Show on dashboard" : "Hide from dashboard"}
             >
               {entry.hidden ? (
@@ -796,8 +876,8 @@ function Card({
                 <EyeIcon className="h-4 w-4" />
               )}
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {subOpen && subs.length > 0 && (
@@ -882,7 +962,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
           setError(null);
           setOpen((v) => !v);
         }}
-        className="rounded px-1.5 py-1 text-zinc-600 opacity-0 transition hover:bg-zinc-800 hover:text-zinc-300 group-hover:opacity-100"
+        className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
         title="Edit name & icon"
       >
         <ImageIcon className="h-4 w-4" />

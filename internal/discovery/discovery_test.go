@@ -157,6 +157,89 @@ func TestResolvePriorityChainsAndLabels(t *testing.T) {
 	}
 }
 
+func TestPrimaryServiceAndSidecars(t *testing.T) {
+	port := func(p uint16) []docker.Port { return []docker.Port{{Public: p, Private: p, Type: "tcp"}} }
+	all := []stacks.Stack{
+		{
+			// Prefix match: immich-server is primary (shortest prefixed name);
+			// machine-learning becomes a sidecar; datastores stay hidden.
+			Name: "immich", Origin: stacks.OriginManaged, Services: []stacks.Service{
+				{Name: "immich-server", Image: "ghcr.io/immich-app/immich-server:v1.135.0", State: "running", Ports: port(2283)},
+				{Name: "immich-machine-learning", Image: "ghcr.io/immich-app/immich-machine-learning:v1.135.0", State: "running", Ports: port(3003)},
+				{Name: "redis", Image: "redis:6.2", State: "running", Ports: port(6379)},
+			},
+		},
+		{
+			// Exact match: qbittorrent primary; helpers become sidecars.
+			Name: "qbittorrent", Origin: stacks.OriginManaged, Services: []stacks.Service{
+				{Name: "qbittorrent", Image: "lscr.io/linuxserver/qbittorrent:5.0", State: "running", Ports: port(8080)},
+				{Name: "mousehole", Image: "some/mousehole", State: "running", Ports: port(9999)},
+			},
+		},
+		{
+			// No service relates to the stack name -> no primary, no sidecars.
+			Name: "media", Origin: stacks.OriginManaged, Services: []stacks.Service{
+				{Name: "jellyfin", Image: "jellyfin/jellyfin", State: "running", Ports: port(8096)},
+				{Name: "sonarr", Image: "linuxserver/sonarr", State: "running", Ports: port(8989)},
+			},
+		},
+	}
+
+	entries := Resolve(all, Options{Host: "h:1"})
+	get := func(stack, service string) Entry {
+		for _, e := range entries {
+			if e.Stack == stack && e.Service == service {
+				return e
+			}
+		}
+		t.Fatalf("missing entry %s/%s", stack, service)
+		return Entry{}
+	}
+
+	if e := get("immich", "immich-server"); e.Sidecar || e.Hidden {
+		t.Errorf("immich-server should be the primary card: %+v", e)
+	}
+	if e := get("immich", "immich-machine-learning"); !e.Sidecar {
+		t.Errorf("immich-machine-learning should be a sidecar: %+v", e)
+	}
+	// Hidden datastores stay hidden, not sidecar (hidden already rolls up).
+	if e := get("immich", "redis"); !e.Hidden || e.Sidecar {
+		t.Errorf("redis should be hidden, not sidecar: %+v", e)
+	}
+	if e := get("qbittorrent", "qbittorrent"); e.Sidecar {
+		t.Errorf("qbittorrent should be primary: %+v", e)
+	}
+	if e := get("qbittorrent", "mousehole"); !e.Sidecar {
+		t.Errorf("mousehole should be a sidecar: %+v", e)
+	}
+	for _, svc := range []string{"jellyfin", "sonarr"} {
+		if e := get("media", svc); e.Sidecar {
+			t.Errorf("media/%s should keep its own card: %+v", svc, e)
+		}
+	}
+}
+
+func TestPrimaryLabelWins(t *testing.T) {
+	all := []stacks.Stack{{
+		Name: "media", Origin: stacks.OriginManaged, Services: []stacks.Service{
+			{Name: "jellyfin", Image: "jellyfin/jellyfin", State: "running",
+				Ports:  []docker.Port{{Public: 8096, Private: 8096}},
+				Labels: map[string]string{"hivedock.primary": "true"}},
+			{Name: "sonarr", Image: "linuxserver/sonarr", State: "running",
+				Ports: []docker.Port{{Public: 8989, Private: 8989}}},
+		},
+	}}
+	entries := Resolve(all, Options{Host: "h:1"})
+	for _, e := range entries {
+		if e.Service == "jellyfin" && e.Sidecar {
+			t.Errorf("labeled primary should not be a sidecar: %+v", e)
+		}
+		if e.Service == "sonarr" && !e.Sidecar {
+			t.Errorf("sonarr should be a sidecar of the labeled primary: %+v", e)
+		}
+	}
+}
+
 func TestResolveUserOverrideBeatsAutoHide(t *testing.T) {
 	all := []stacks.Stack{{
 		Name: "app-with-db", Origin: stacks.OriginManaged, Services: []stacks.Service{

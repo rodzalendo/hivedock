@@ -34,6 +34,9 @@ export default function Updates() {
     const done = () => {
       setChecking(false);
       setApplyingImages(new Set());
+      // Clear any progress note ("Checking N images…") so the header falls
+      // back to "Last checked just now" instead of a stale in-progress line.
+      setNote(null);
     };
     window.addEventListener("hivedock:updates", done);
     return () => window.removeEventListener("hivedock:updates", done);
@@ -169,7 +172,9 @@ export default function Updates() {
         <div className="flex items-center gap-3">
           {note && (
             <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-              {busy && <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />}
+              {(busy || checking) && (
+                <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />
+              )}
               {note}
             </span>
           )}

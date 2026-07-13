@@ -35,6 +35,11 @@ type Entry struct {
 	Description string     `json:"description,omitempty"`
 	Status      string     `json:"status"` // running | stopped | ...
 	Hidden      bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
+	// Sidecar marks a visible service that belongs under its stack's primary
+	// card (e.g. immich-machine-learning under immich-server). The dashboard
+	// rolls sidecars up behind the primary card's expander instead of giving
+	// them their own tile. Only set when the stack has an identifiable primary.
+	Sidecar bool `json:"sidecar,omitempty"`
 }
 
 // Options tune resolution.
@@ -59,14 +64,19 @@ func Resolve(all []stacks.Stack, opts Options) []Entry {
 	for _, st := range all {
 		// Candidates are the non-hidden services; a single-candidate managed
 		// stack gets the stack's name as its default card name.
-		candidates := 0
+		var visible []stacks.Service
 		for _, svc := range st.Services {
 			if !isHidden(st, svc, opts) {
-				candidates++
+				visible = append(visible, svc)
 			}
 		}
+		primary := primaryService(st, visible)
 		for _, svc := range st.Services {
-			entries = append(entries, resolveOne(st, svc, candidates, opts))
+			e := resolveOne(st, svc, len(visible), opts)
+			if primary != "" && svc.Name != primary && !e.Hidden {
+				e.Sidecar = true
+			}
+			entries = append(entries, e)
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool {

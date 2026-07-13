@@ -139,6 +139,7 @@ export interface HomeEntry {
   description?: string;
   status: string;
   hidden: boolean;
+  sidecar?: boolean; // visible helper service rolled up under its stack's primary card
 }
 
 export const fetchHome = () => getJSON<HomeEntry[]>("/api/home");
@@ -153,6 +154,7 @@ export interface HomeLayout {
   cardGroups?: Record<string, string>; // "stack/service" -> group name ("" = default)
   cardOrder?: Record<string, string[]>; // group name -> card keys (manual sort)
   groupOrder?: string[]; // group names in display order
+  groupColumns?: Record<string, number>; // group name -> column index (0-based)
 }
 
 export async function fetchHomeLayout(): Promise<HomeLayout> {

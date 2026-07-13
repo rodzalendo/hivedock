@@ -140,6 +140,57 @@ func autoHide(svc stacks.Service) bool {
 	return true
 }
 
+// primaryService picks the one service in a multi-service stack that deserves
+// the top-level card; every other visible service becomes a rolled-up sidecar.
+// A stack only gets a primary when a service clearly *is* the stack's app:
+// a hivedock.primary label, or a service/image slug equal to (or prefixed by)
+// the stack's slug. Stacks whose services are unrelated apps (e.g. a "media"
+// stack holding jellyfin + sonarr) match nothing and keep separate cards.
+func primaryService(st stacks.Stack, visible []stacks.Service) string {
+	if len(visible) < 2 {
+		return ""
+	}
+	for _, svc := range visible {
+		if v, ok := boolLabel(svc.Labels, "hivedock.primary"); ok && v {
+			return svc.Name
+		}
+	}
+	stackSlug := normalizeImage(st.Name)
+	if stackSlug == "" {
+		return ""
+	}
+	var exact, prefixed []stacks.Service
+	for _, svc := range visible {
+		nameSlug := normalizeImage(svc.Name)
+		imageSlug := normalizeImage(svc.Image)
+		switch {
+		case nameSlug == stackSlug || imageSlug == stackSlug:
+			exact = append(exact, svc)
+		case strings.HasPrefix(nameSlug, stackSlug+"-") || strings.HasPrefix(imageSlug, stackSlug+"-"):
+			prefixed = append(prefixed, svc)
+		}
+	}
+	pick := func(list []stacks.Service) string {
+		best := list[0]
+		for _, svc := range list[1:] {
+			// Shortest name wins ("immich-server" beats
+			// "immich-machine-learning"); ties break alphabetically.
+			if len(svc.Name) < len(best.Name) ||
+				(len(svc.Name) == len(best.Name) && svc.Name < best.Name) {
+				best = svc
+			}
+		}
+		return best.Name
+	}
+	if len(exact) > 0 {
+		return pick(exact)
+	}
+	if len(prefixed) > 0 {
+		return pick(prefixed)
+	}
+	return ""
+}
+
 // humanize turns a service/stack name into a display label:
 // "uptime-kuma" -> "Uptime Kuma".
 func humanize(s string) string {
