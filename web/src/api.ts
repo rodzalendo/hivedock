@@ -261,6 +261,19 @@ export async function runStackAction(
   return (await res.json()) as DeployAck;
 }
 
+// restartService restarts a single service of a managed stack. Accepted (202)
+// immediately; output streams over the WebSocket like any stack action.
+export async function restartService(
+  stack: string,
+  service: string,
+): Promise<DeployAck> {
+  const res = await mutate(
+    `/api/stacks/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/restart`,
+    "POST",
+  );
+  return (await res.json()) as DeployAck;
+}
+
 // ---- Stack creation ----
 
 export interface CreatedStack {

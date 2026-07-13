@@ -73,6 +73,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Delete("/stacks/{name}", api.deleteStack)
 			r.Post("/stacks/{name}/rename", api.renameStack)
 			r.Post("/stacks/{name}/actions/{action}", api.runStackAction)
+			r.Post("/stacks/{name}/services/{service}/restart", api.restartService)
 			r.Post("/stacks/{name}/services/{service}/update", api.updateService)
 			r.Get("/stacks/{name}/compose", api.getCompose)
 			r.Put("/stacks/{name}/compose", api.putCompose)

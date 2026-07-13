@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchStacks,
@@ -6,6 +6,7 @@ import {
   deleteStack,
   renameStack,
   runStackAction,
+  restartService,
   fetchUpdates,
   type Stack,
   type Service,
@@ -17,7 +18,7 @@ import {
   ServiceDot,
   StatusDot,
 } from "../components/ui";
-import { PencilIcon, TrashIcon } from "../components/icons";
+import { PencilIcon, RestartIcon, SpinnerIcon, TrashIcon } from "../components/icons";
 import HostStrip from "../components/HostStrip";
 import { useHashRoute, navigate } from "../useHashRoute";
 import LogsPanel from "../components/LogsPanel";
@@ -359,11 +360,16 @@ function StackDetail({
                   <th className="pb-2 pr-4 font-medium">Image</th>
                   <th className="pb-2 pr-4 font-medium">State</th>
                   <th className="pb-2 font-medium">Ports</th>
+                  {managed && <th className="pb-2" />}
                 </tr>
               </thead>
               <tbody className="align-top">
                 {services.map((svc) => (
-                  <ServiceRow key={svc.name} svc={svc} />
+                  <ServiceRow
+                    key={svc.name}
+                    svc={svc}
+                    stack={managed ? stack.name : undefined}
+                  />
                 ))}
               </tbody>
             </table>
@@ -559,7 +565,49 @@ function StackActions({
   );
 }
 
-function ServiceRow({ svc }: { svc: Service }) {
+// ServiceRow is one container line; managed stacks (stack prop set) get a
+// per-service restart button. The spinner clears when the operation's
+// deploy:end event lands (the restart itself streams to the console above).
+function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!busy) return;
+    const onDeploy = (ev: Event) => {
+      const msg = (ev as CustomEvent).detail as {
+        type: string;
+        payload?: { stack?: string; service?: string };
+      };
+      if (
+        msg.type === "deploy:end" &&
+        msg.payload?.stack === stack &&
+        msg.payload?.service === svc.name
+      ) {
+        setBusy(false);
+      }
+    };
+    window.addEventListener("hivedock:deploy", onDeploy);
+    // Never spin forever if the socket drops mid-operation.
+    const timer = window.setTimeout(() => setBusy(false), 120_000);
+    return () => {
+      window.removeEventListener("hivedock:deploy", onDeploy);
+      window.clearTimeout(timer);
+    };
+  }, [busy, stack, svc.name]);
+
+  async function onRestart() {
+    if (!stack || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await restartService(stack, svc.name);
+    } catch (err) {
+      setBusy(false);
+      setError(err instanceof Error ? err.message : "Restart failed.");
+    }
+  }
+
   return (
     <tr className="border-t border-zinc-800/60">
       <td className="py-2 pr-4 text-zinc-200">
@@ -575,7 +623,7 @@ function ServiceRow({ svc }: { svc: Service }) {
           {svc.state}
         </span>
       </td>
-      <td className="py-2 text-xs text-zinc-400">
+      <td className="py-2 pr-4 text-xs text-zinc-400">
         {svc.ports && svc.ports.length > 0
           ? svc.ports
               .filter((p) => p.public)
@@ -583,6 +631,29 @@ function ServiceRow({ svc }: { svc: Service }) {
               .join(", ") || "—"
           : "—"}
       </td>
+      {stack && (
+        <td className="py-1.5 text-right">
+          <span className="inline-flex items-center gap-2">
+            {error && (
+              <span className="max-w-40 truncate text-[11px] text-red-400" title={error}>
+                {error}
+              </span>
+            )}
+            <button
+              onClick={onRestart}
+              disabled={busy}
+              title={`Restart ${svc.name}`}
+              className="rounded-md border border-zinc-700 p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+            >
+              {busy ? (
+                <SpinnerIcon className="h-3.5 w-3.5" />
+              ) : (
+                <RestartIcon className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </span>
+        </td>
+      )}
     </tr>
   );
 }

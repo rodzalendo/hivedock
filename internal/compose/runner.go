@@ -35,6 +35,7 @@ type Op struct {
 	Action      Action
 	ComposeFile string // absolute path to the compose file
 	ProjectDir  string // --project-directory (same path in/out of container)
+	Service     string // optional: scope the action to a single service
 }
 
 // Runner executes mutating `docker compose` subcommands and enforces a
@@ -91,6 +92,9 @@ func (r *Runner) Exec(ctx context.Context, op Op, onLine func(string)) error {
 	// no TTY on the pipe, so compose already emits plain progress lines.
 	args := []string{"compose", "--ansi", "never", "-f", op.ComposeFile, "--project-directory", op.ProjectDir}
 	args = append(args, subcommandArgs(op.Action)...)
+	if op.Service != "" {
+		args = append(args, op.Service)
+	}
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	w := &lineEmitter{emit: onLine}

@@ -69,12 +69,70 @@ func (a *api) runStackAction(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// restartService restarts a single service of a managed stack — the smallest
+// useful hammer when one container misbehaves. Output streams over the
+// WebSocket exactly like a stack-level action, under the same per-stack lock.
+func (a *api) restartService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	service := chi.URLParam(r, "service")
+
+	st, ok, err := a.stacks.Get(r.Context(), name)
+	if err != nil {
+		a.logger.Error("restart service: get stack", "name", name, "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to load stack: "+err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "stack not found: "+name)
+		return
+	}
+	if st.Origin != stacks.OriginManaged || st.ComposeFile == "" {
+		writeError(w, http.StatusConflict, "stack is external (read-only); no compose file to operate on")
+		return
+	}
+	found := false
+	for _, svc := range st.Services {
+		if svc.Name == service {
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "service not found in stack: "+service)
+		return
+	}
+
+	release, acquired := a.runner.Start(name)
+	if !acquired {
+		writeError(w, http.StatusConflict, "an operation is already running for this stack")
+		return
+	}
+
+	opID := newOpID()
+	op := compose.Op{
+		Stack:       name,
+		Action:      compose.ActionRestart,
+		ComposeFile: st.ComposeFile,
+		ProjectDir:  st.Dir,
+		Service:     service,
+	}
+
+	go a.executeDeploy(op, opID, release)
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"id":      opID,
+		"stack":   name,
+		"action":  string(compose.ActionRestart),
+		"service": service,
+	})
+}
+
 // executeDeploy runs the operation and broadcasts start/line/end over the hub.
 func (a *api) executeDeploy(op compose.Op, opID string, release func()) {
 	defer release()
 
 	a.hub.Publish(events.Message{Type: "deploy:start", Payload: map[string]string{
-		"id": opID, "stack": op.Stack, "action": string(op.Action),
+		"id": opID, "stack": op.Stack, "action": string(op.Action), "service": op.Service,
 	}})
 	a.logger.Info("deploy start", "stack", op.Stack, "action", op.Action, "id", opID)
 
@@ -84,7 +142,7 @@ func (a *api) executeDeploy(op compose.Op, opID string, release func()) {
 		}})
 	})
 
-	end := map[string]any{"id": opID, "stack": op.Stack, "action": string(op.Action), "ok": err == nil}
+	end := map[string]any{"id": opID, "stack": op.Stack, "action": string(op.Action), "service": op.Service, "ok": err == nil}
 	if err != nil {
 		end["error"] = err.Error()
 		a.logger.Warn("deploy failed", "stack", op.Stack, "action", op.Action, "id", opID, "err", err)

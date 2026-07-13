@@ -112,20 +112,39 @@ export default function Dashboard() {
     return map;
   }, [entries]);
 
+  // Stacks that still have a top-level card to carry the rolled-up sub-list.
+  const carrierStacks = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) {
+      if (!e.hidden && !e.sidecar) set.add(e.stack);
+    }
+    return set;
+  }, [entries]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return entries.filter((e) => {
-      // Hidden and rolled-up services only surface as cards when the user
-      // asks ("Show all") or searches for them directly.
-      if ((e.hidden || e.sidecar) && !showHidden && !q) return false;
+      // A service that belongs under another card lives there permanently —
+      // it never becomes a separate tile, not even via "Show hidden".
+      if (e.sidecar || (e.hidden && carrierStacks.has(e.stack))) return false;
+      // Hidden services whose whole stack is hidden (no card to roll under)
+      // are only reachable via the "Show hidden" toggle.
+      if (e.hidden && !showHidden) return false;
       if (!q) return true;
-      return (
+      // Match the card's own fields, or any of its bundled services — a hit
+      // on "redis" should surface the card that contains Redis.
+      const own =
         e.name.toLowerCase().includes(q) ||
         e.group.toLowerCase().includes(q) ||
-        e.stack.toLowerCase().includes(q)
+        e.stack.toLowerCase().includes(q);
+      const subMatch = (subsByStack.get(e.stack) ?? []).some(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.service.toLowerCase().includes(q),
       );
+      return own || subMatch;
     });
-  }, [entries, search, showHidden]);
+  }, [entries, search, showHidden, carrierStacks, subsByStack]);
 
   // Bucket cards into groups, sort within each, order the groups.
   const groups = useMemo(() => {
@@ -211,7 +230,11 @@ export default function Dashboard() {
     return m;
   }, [columnized]);
 
-  const hiddenCount = entries.filter((e) => e.hidden || e.sidecar).length;
+  // Only orphaned hidden services (no visible card in their stack to roll
+  // under) need the reveal toggle; bundled ones are always in their expander.
+  const hiddenCount = entries.filter(
+    (e) => e.hidden && !carrierStacks.has(e.stack),
+  ).length;
   const userGroups = layout.groups ?? [];
 
   function startEdit() {
@@ -424,7 +447,7 @@ export default function Dashboard() {
               onChange={(e) => setShowHidden(e.target.checked)}
               className="accent-accent-500"
             />
-            Show all services ({hiddenCount})
+            Show hidden ({hiddenCount})
           </label>
         )}
 
