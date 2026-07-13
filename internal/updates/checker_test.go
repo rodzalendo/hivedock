@@ -120,7 +120,7 @@ func TestCheckImageToleratesRecentRebuildSkew(t *testing.T) {
 	reg := &fakeReg{
 		tags: map[string][]string{"library/app": {"1.2.3", "1.3.0"}},
 		created: map[string]time.Time{
-			"library/app:1.2.3": now,                      // rebuilt today
+			"library/app:1.2.3": now,                           // rebuilt today
 			"library/app:1.3.0": now.Add(-20 * 24 * time.Hour), // released 20d ago
 		},
 	}

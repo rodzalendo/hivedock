@@ -19,22 +19,22 @@ type PortLink struct {
 
 // Entry is a resolved homepage card (one per user-facing service).
 type Entry struct {
-	Stack       string     `json:"stack"`
-	Service     string     `json:"service"`
-	Name        string     `json:"name"`
-	Group       string     `json:"group"`
+	Stack   string `json:"stack"`
+	Service string `json:"service"`
+	Name    string `json:"name"`
+	Group   string `json:"group"`
 	// ExplicitGroup marks a group that came from a hivedock.group/homepage.group
 	// label (vs. the stack-name fallback). The dashboard only honors explicit
 	// groups by default; derived ones collapse into its default group.
-	ExplicitGroup bool `json:"explicitGroup,omitempty"`
-	URL         string     `json:"url,omitempty"`
-	Ports       []PortLink `json:"ports,omitempty"`
-	IconSlug    string     `json:"iconSlug,omitempty"` // normalized image slug (icon matcher resolves it)
-	StackSlug   string     `json:"stackSlug,omitempty"` // normalized stack name — icon fallback when the image slug has no asset
-	Icon        string     `json:"icon,omitempty"`     // explicit icon label (user override or label) if set
-	Description string     `json:"description,omitempty"`
-	Status      string     `json:"status"` // running | stopped | ...
-	Hidden      bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
+	ExplicitGroup bool       `json:"explicitGroup,omitempty"`
+	URL           string     `json:"url,omitempty"`
+	Ports         []PortLink `json:"ports,omitempty"`
+	IconSlug      string     `json:"iconSlug,omitempty"`  // normalized image slug (icon matcher resolves it)
+	StackSlug     string     `json:"stackSlug,omitempty"` // normalized stack name — icon fallback when the image slug has no asset
+	Icon          string     `json:"icon,omitempty"`      // explicit icon label (user override or label) if set
+	Description   string     `json:"description,omitempty"`
+	Status        string     `json:"status"` // running | stopped | ...
+	Hidden        bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
 	// Sidecar marks a visible service that belongs under its stack's primary
 	// card (e.g. immich-machine-learning under immich-server). The dashboard
 	// rolls sidecars up behind the primary card's expander instead of giving
@@ -132,14 +132,14 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 		Name:          name,
 		Group:         group,
 		ExplicitGroup: explicitGroup,
-		URL:         url,
-		Ports:       ports,
-		Icon:        icon,
-		IconSlug:    normalizeImage(svc.Image),
-		StackSlug:   normalizeImage(st.Name),
-		Description: firstLabel(l, "hivedock.description", "homepage.description"),
-		Status:      svc.State,
-		Hidden:      isHidden(st, svc, opts),
+		URL:           url,
+		Ports:         ports,
+		Icon:          icon,
+		IconSlug:      normalizeImage(svc.Image),
+		StackSlug:     normalizeImage(st.Name),
+		Description:   firstLabel(l, "hivedock.description", "homepage.description"),
+		Status:        svc.State,
+		Hidden:        isHidden(st, svc, opts),
 	}
 	return e
 }
