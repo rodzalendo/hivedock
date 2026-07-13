@@ -25,17 +25,24 @@ export default function HostStrip() {
 
   return (
     <div className="flex flex-wrap items-center gap-6 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2 text-xs">
-      <Meter label="CPU" pct={data.cpuPercent} text={`${data.cpuPercent.toFixed(0)}%`} />
+      <Meter
+        label="CPU"
+        pct={data.cpuPercent}
+        text={`${data.cpuPercent.toFixed(0)}%`}
+        valueMinW="2.75rem"
+      />
       <Meter
         label="Memory"
         pct={memPct}
         text={`${fmtBytes(data.memUsedBytes)} / ${fmtBytes(data.memTotalBytes)}`}
+        valueMinW="9rem"
       />
       {!!data.diskTotalBytes && (
         <Meter
           label="Disk"
           pct={((data.diskUsedBytes ?? 0) / data.diskTotalBytes) * 100}
           text={`${fmtBytes(data.diskUsedBytes ?? 0)} / ${fmtBytes(data.diskTotalBytes)}`}
+          valueMinW="9rem"
         />
       )}
       {data.numCpu > 0 && (
@@ -47,17 +54,34 @@ export default function HostStrip() {
   );
 }
 
-function Meter({ label, pct, text }: { label: string; pct: number; text: string }) {
+// Meter reserves a fixed, right-aligned width for its value so the row never
+// reflows as numbers change width (7% → 100%, 3.8 GB → 11.4 GB).
+function Meter({
+  label,
+  pct,
+  text,
+  valueMinW,
+}: {
+  label: string;
+  pct: number;
+  text: string;
+  valueMinW: string;
+}) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color =
     clamped > 85 ? "bg-red-500" : clamped > 60 ? "bg-hive-500" : "bg-zinc-500";
   return (
     <div className="flex items-center gap-2">
       <span className="text-zinc-500">{label}</span>
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-zinc-800">
+      <div className="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-zinc-800">
         <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="tabular-nums text-zinc-300">{text}</span>
+      <span
+        className="inline-block text-right tabular-nums text-zinc-300"
+        style={{ minWidth: valueMinW }}
+      >
+        {text}
+      </span>
     </div>
   );
 }

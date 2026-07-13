@@ -240,6 +240,28 @@ func TestPrimaryLabelWins(t *testing.T) {
 	}
 }
 
+func TestResolveURLOverride(t *testing.T) {
+	all := []stacks.Stack{{
+		// jellyfin in host-network mode: no published ports -> no auto URL.
+		Name: "jellyfin", Origin: stacks.OriginManaged, Services: []stacks.Service{
+			{Name: "jellyfin", Image: "jellyfin/jellyfin", State: "running"},
+		},
+	}}
+	opts := Options{
+		Host: "h:1",
+		URLOverride: func(stack, service string) (string, bool) {
+			if stack == "jellyfin" && service == "jellyfin" {
+				return "http://192.168.1.50:8096", true
+			}
+			return "", false
+		},
+	}
+	entries := Resolve(all, opts)
+	if len(entries) != 1 || entries[0].URL != "http://192.168.1.50:8096" {
+		t.Fatalf("url override should win: %+v", entries)
+	}
+}
+
 func TestResolveUserOverrideBeatsAutoHide(t *testing.T) {
 	all := []stacks.Stack{{
 		Name: "app-with-db", Origin: stacks.OriginManaged, Services: []stacks.Service{

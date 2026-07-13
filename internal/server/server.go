@@ -95,6 +95,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Put("/home/{stack}/{service}/visibility", api.setVisibility)
 			r.Put("/home/{stack}/{service}/icon", api.setIcon)
 			r.Put("/home/{stack}/{service}/name", api.setName)
+			r.Put("/home/{stack}/{service}/url", api.setUrl)
 			r.Get("/icons/{slug}", api.icon)
 		})
 	})

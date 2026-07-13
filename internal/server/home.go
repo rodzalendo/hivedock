@@ -32,12 +32,17 @@ func (a *api) listHome(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		a.logger.Warn("home: load name overrides", "err", err)
 	}
+	urlOverrides, err := a.urlOverrides()
+	if err != nil {
+		a.logger.Warn("home: load url overrides", "err", err)
+	}
 
 	entries := discovery.Resolve(stacksList, discovery.Options{
 		Host:           a.publicHost(r),
 		HiddenOverride: overrides,
 		IconOverride:   iconOverrides,
 		NameOverride:   nameOverrides,
+		URLOverride:    urlOverrides,
 	})
 	if entries == nil {
 		entries = []discovery.Entry{}
@@ -169,6 +174,55 @@ func (a *api) setName(w http.ResponseWriter, r *http.Request) {
 	}
 	a.hub.NotifyChanged("prefs")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// setUrl persists a user's custom link URL for a service's card; empty clears
+// it back to the automatic port-derived link.
+func (a *api) setUrl(w http.ResponseWriter, r *http.Request) {
+	stack := chi.URLParam(r, "stack")
+	service := chi.URLParam(r, "service")
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	url := strings.TrimSpace(body.URL)
+	if url != "" && !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		writeError(w, http.StatusBadRequest, "URL must start with http:// or https://")
+		return
+	}
+	if a.db == nil {
+		writeError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if err := a.db.SetServiceURL(stack, service, url); err != nil {
+		a.logger.Error("set url", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to persist link")
+		return
+	}
+	a.hub.NotifyChanged("prefs")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// urlOverrides returns a lookup over persisted custom link URLs.
+func (a *api) urlOverrides() (func(stack, service string) (string, bool), error) {
+	if a.db == nil {
+		return nil, nil
+	}
+	m, err := a.db.ServiceURLOverrides()
+	if err != nil {
+		return nil, err
+	}
+	return func(stack, service string) (string, bool) {
+		if svcs, ok := m[stack]; ok {
+			if v, ok := svcs[service]; ok {
+				return v, true
+			}
+		}
+		return "", false
+	}, nil
 }
 
 // nameOverrides returns a lookup over persisted custom display names.

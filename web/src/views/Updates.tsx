@@ -362,6 +362,7 @@ export default function Updates() {
               entry={e}
               open={expanded.has(e.image)}
               onToggle={() => toggle(e.image)}
+              onIgnore={() => toggleIgnore(e)}
             />
           ))}
         </Section>
@@ -375,6 +376,9 @@ export default function Updates() {
               entry={e}
               open={expanded.has(e.image)}
               onToggle={() => toggle(e.image)}
+              onIgnore={
+                e.kind === "unsupported" ? undefined : () => toggleIgnore(e)
+              }
             />
           ))}
         </Section>

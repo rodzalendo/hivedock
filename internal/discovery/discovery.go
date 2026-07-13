@@ -56,6 +56,10 @@ type Options struct {
 	// NameOverride reports a user's custom display name for a service, taking
 	// precedence over labels and the automatic name. Returns (value, set).
 	NameOverride func(stack, service string) (string, bool)
+	// URLOverride reports a user's custom link URL for a service, taking
+	// precedence over labels and the port heuristic (the reliable fallback for
+	// host-network or shared-network services). Returns (value, set).
+	URLOverride func(stack, service string) (string, bool)
 }
 
 // Resolve produces one entry per service across all stacks (managed + external).
@@ -116,6 +120,13 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 	var ports []PortLink
 	if url == "" {
 		url, ports = urlHeuristic(svc, opts.Host)
+	}
+	// A user's explicit link wins over labels and the heuristic — the reliable
+	// fix when a service publishes no ports on its own container.
+	if opts.URLOverride != nil {
+		if v, set := opts.URLOverride(st.Name, svc.Name); set && v != "" {
+			url = v
+		}
 	}
 
 	// Icon: user override wins over any compose label.

@@ -7,6 +7,7 @@ import {
   setServiceVisibility,
   setServiceIcon,
   setServiceName,
+  setServiceUrl,
   type HomeEntry,
   type HomeLayout,
 } from "../api";
@@ -945,14 +946,15 @@ function SubRow({ entry }: { entry: HomeEntry }) {
   );
 }
 
-// CardEditor lets the user rename a card and set a custom icon (image URL or
-// dashboard-icons slug), or reset either to the automatic value. Persisted
-// server-side.
+// CardEditor lets the user rename a card, set a custom icon (image URL or
+// dashboard-icons slug), and set a custom link URL — or reset any to the
+// automatic value. Persisted server-side.
 function CardEditor({ entry }: { entry: HomeEntry }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(entry.name);
   const [icon, setIcon] = useState(entry.icon ?? "");
+  const [url, setUrl] = useState(entry.url ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -967,6 +969,9 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
       }
       if (icon.trim() !== (entry.icon ?? "")) {
         await setServiceIcon(entry.stack, entry.service, icon.trim());
+      }
+      if (url.trim() !== (entry.url ?? "")) {
+        await setServiceUrl(entry.stack, entry.service, url.trim());
       }
       await qc.invalidateQueries({ queryKey: ["home"] });
       setOpen(false);
@@ -983,11 +988,12 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
         onClick={() => {
           setName(entry.name);
           setIcon(entry.icon ?? "");
+          setUrl(entry.url ?? "");
           setError(null);
           setOpen((v) => !v);
         }}
         className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
-        title="Edit name & icon"
+        title="Edit name, icon & link"
       >
         <PencilIcon className="h-4 w-4" />
       </button>
@@ -1030,7 +1036,25 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
             >
               dashboard-icons
             </a>{" "}
-            name. Leave either field empty to go back to automatic.
+            name. Leave a field empty to go back to automatic.
+          </p>
+          <label className="mb-1 mt-2 block text-[11px] font-medium text-zinc-400">
+            Link URL
+          </label>
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void save();
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder="http://192.168.1.50:8096"
+            className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
+          />
+          <p className="mt-1 text-[10px] leading-snug text-zinc-600">
+            Where the tile links. Set this for apps whose port HiveDock can’t
+            detect — host-network containers, or one sharing another’s network
+            (e.g. behind Gluetun). Empty = automatic.
           </p>
           <div className="mt-2 flex items-center gap-2">
             <button

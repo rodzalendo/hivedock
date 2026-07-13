@@ -95,6 +95,44 @@ func (s *Store) ServiceNameOverrides() (map[string]map[string]string, error) {
 	return out, rows.Err()
 }
 
+// SetServiceURL persists a user's custom link URL for a service's dashboard
+// card; empty clears it (revert to the automatic port-derived link). Upserts
+// without disturbing the row's other prefs.
+func (s *Store) SetServiceURL(stack, service, url string) error {
+	_, err := s.db.Exec(`
+		INSERT INTO service_prefs (stack, service, url, updated_at)
+		VALUES (?, ?, ?, datetime('now'))
+		ON CONFLICT(stack, service) DO UPDATE SET url = excluded.url, updated_at = datetime('now')
+	`, stack, service, url)
+	if err != nil {
+		return fmt.Errorf("set service url: %w", err)
+	}
+	return nil
+}
+
+// ServiceURLOverrides loads all persisted custom link URLs, keyed
+// stack -> service -> url. Rows with an empty url are omitted.
+func (s *Store) ServiceURLOverrides() (map[string]map[string]string, error) {
+	rows, err := s.db.Query(`SELECT stack, service, url FROM service_prefs WHERE url <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("query service_prefs urls: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]map[string]string{}
+	for rows.Next() {
+		var stack, service, url string
+		if err := rows.Scan(&stack, &service, &url); err != nil {
+			return nil, fmt.Errorf("scan service_prefs url: %w", err)
+		}
+		if out[stack] == nil {
+			out[stack] = map[string]string{}
+		}
+		out[stack][service] = url
+	}
+	return out, rows.Err()
+}
+
 // RenameStackPrefs moves any persisted per-service prefs (hidden, custom icon)
 // from an old stack name to a new one, so a renamed stack keeps its settings.
 func (s *Store) RenameStackPrefs(oldName, newName string) error {

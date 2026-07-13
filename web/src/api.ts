@@ -208,6 +208,20 @@ export async function setServiceIcon(
   );
 }
 
+// setServiceUrl persists a custom link URL for a service's card; pass an empty
+// string to clear it and revert to the automatic port-derived link.
+export async function setServiceUrl(
+  stack: string,
+  service: string,
+  url: string,
+): Promise<void> {
+  await mutate(
+    `/api/home/${encodeURIComponent(stack)}/${encodeURIComponent(service)}/url`,
+    "PUT",
+    { url },
+  );
+}
+
 // ---- Auth ----
 
 export interface AuthStatus {
