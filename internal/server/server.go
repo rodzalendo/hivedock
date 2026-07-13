@@ -83,6 +83,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.Post("/system/prune", api.prune)
 			r.Get("/settings", api.settings)
 			r.Put("/settings", api.updateSettings)
+			r.Post("/settings/webhook/test", api.testWebhook)
 			r.Get("/updates", api.listUpdates)
 			r.Post("/updates/check", api.checkUpdates)
 			r.Put("/updates/ignore", api.setIgnore)

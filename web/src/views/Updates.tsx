@@ -9,6 +9,7 @@ import {
   type UpdateEntry,
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
+import { HelpTip } from "../components/ui";
 
 const diffColor: Record<string, string> = {
   major: "bg-red-500/15 text-red-400",
@@ -163,7 +164,17 @@ export default function Updates() {
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
             Updates
           </h2>
-          <p className="mt-0.5 text-xs text-zinc-600">
+          <p
+            className={`mt-0.5 flex items-center gap-1.5 text-sm font-medium ${
+              available.length > 0 ? "text-hive-500" : "text-green-400"
+            }`}
+          >
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                available.length > 0 ? "bg-hive-500" : "bg-green-500"
+              }`}
+              aria-hidden
+            />
             {available.length > 0
               ? `${available.length} update${available.length === 1 ? "" : "s"} available`
               : "Everything up to date"}
@@ -279,14 +290,14 @@ export default function Updates() {
 
       {ignored.length > 0 && (
         <div>
-          <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+          <h3 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
             Ignored
+            <HelpTip>
+              An update exists, but you chose to stay on the pinned tag. These
+              are left out of “Update all”. Bump the tag in the compose file
+              (or un-ignore) to act on them.
+            </HelpTip>
           </h3>
-          <p className="mb-1.5 text-[11px] text-zinc-600">
-            An update exists, but you chose to stay on the pinned tag. These are
-            left out of “Update all”. Bump the tag in the compose file (or
-            un-ignore) to act on them.
-          </p>
           <ul className="space-y-1">
             {ignored.map((e) => (
               <UpdateRow

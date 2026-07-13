@@ -123,6 +123,41 @@ export function DriftInfo({
   );
 }
 
+// HelpTip is a round "?" next to a section header that reveals the section's
+// explanation in a popover — keeps the page clean without losing the docs.
+export function HelpTip({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="What is this?"
+        title="What is this?"
+        className="flex h-4 w-4 items-center justify-center rounded-full border border-zinc-600 text-[10px] font-semibold leading-none text-zinc-500 transition hover:border-zinc-400 hover:text-zinc-200"
+      >
+        ?
+      </button>
+      {open && (
+        <span className="absolute left-0 top-5 z-20 block w-72 rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-left text-[11px] font-normal normal-case leading-relaxed tracking-normal text-zinc-400 shadow-xl">
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function OriginBadge({ origin }: { origin: Origin }) {
   const managed = origin === "managed";
   return (

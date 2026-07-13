@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -146,4 +149,57 @@ func (a *api) updateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.settings(w, r)
+}
+
+// testWebhook POSTs a sample payload to the given URL (or the configured one
+// when the body omits it) so the user can verify their notification wiring
+// without waiting for a real update. Synchronous — reports the upstream result.
+func (a *api) testWebhook(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body) // empty/missing body = use saved URL
+	url := strings.TrimSpace(body.URL)
+	if url == "" {
+		url = a.effectiveWebhookURL()
+	}
+	if url == "" {
+		writeError(w, http.StatusBadRequest, "no webhook URL to test — enter one first")
+		return
+	}
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		writeError(w, http.StatusBadRequest, "webhook URL must start with http:// or https://")
+		return
+	}
+	payload := map[string]any{
+		"event":   "test",
+		"time":    time.Now().UTC().Format(time.RFC3339),
+		"count":   0,
+		"updates": []any{},
+		"message": "HiveDock webhook test — notifications are wired up.",
+	}
+	buf, err := json.Marshal(payload)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build test payload")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(buf))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid webhook URL")
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "webhook unreachable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("webhook endpoint responded with HTTP %d", resp.StatusCode))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": resp.StatusCode})
 }

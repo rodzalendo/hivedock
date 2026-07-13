@@ -87,3 +87,54 @@ func TestSettingsWebhookRoundTrip(t *testing.T) {
 		t.Fatalf("invalid url status = %d, want 400", rec.Code)
 	}
 }
+
+func TestWebhookTest(t *testing.T) {
+	h := dbHandler(t, config.Config{StacksDir: "/opt/stacks"})
+
+	// A receiving endpoint that records the payload.
+	var gotBody []byte
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	body, _ := json.Marshal(map[string]string{"url": target.URL})
+	req := httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("target got non-JSON payload: %v", err)
+	}
+	if payload["event"] != "test" {
+		t.Errorf("payload event = %v, want test", payload["event"])
+	}
+
+	// No URL anywhere -> 400.
+	req = httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("no-url status = %d, want 400", rec.Code)
+	}
+
+	// Upstream failure -> 502.
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer failing.Close()
+	body, _ = json.Marshal(map[string]string{"url": failing.URL})
+	req = httptest.NewRequest(http.MethodPost, "/api/settings/webhook/test", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("failing-upstream status = %d, want 502", rec.Code)
+	}
+}

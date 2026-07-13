@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchSettings, saveSettings, pruneSystem } from "../api";
+import { fetchSettings, saveSettings, pruneSystem, testWebhook } from "../api";
 import { SpinnerIcon } from "../components/icons";
+import { HelpTip } from "../components/ui";
 
 export default function Settings() {
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -11,6 +12,7 @@ export default function Settings() {
 
   const [webhook, setWebhook] = useState("");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,6 +33,21 @@ export default function Settings() {
     }
   }
 
+  // onTest fires a sample payload at the URL in the field (not the saved one),
+  // so wiring can be verified before hitting Save.
+  async function onTest() {
+    setTesting(true);
+    setNote(null);
+    try {
+      await testWebhook(webhook.trim());
+      setNote("Test sent — check the receiving service.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Test failed.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   if (isLoading) return <p className="text-sm text-zinc-500">Loading…</p>;
   if (isError)
     return (
@@ -47,16 +64,18 @@ export default function Settings() {
       </h2>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <h3 className="mb-1 text-sm font-medium text-zinc-200">Notifications</h3>
-        <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-          When an update check finds a <em>new</em> image update, HiveDock sends
-          an HTTP <span className="font-mono text-zinc-400">POST</span> with a
-          JSON body to the URL below — so you can get notified without watching
-          this page. Point it at any service that accepts an incoming webhook
-          (Discord, Slack, ntfy, Gotify, Home Assistant, n8n, …). Leave it blank
-          to disable. It never receives your stacks or credentials — only which
-          images have updates.
-        </p>
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+          Notifications
+          <HelpTip>
+            When an update check finds a <em>new</em> image update, HiveDock
+            sends an HTTP <span className="font-mono">POST</span> with a JSON
+            body to the URL below — so you can get notified without watching
+            this page. Point it at any service that accepts an incoming webhook
+            (Discord, Slack, ntfy, Gotify, Home Assistant, n8n, …). Leave it
+            blank to disable. It never receives your stacks or credentials —
+            only which images have updates.
+          </HelpTip>
+        </h3>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-zinc-400">
             Webhook URL
@@ -95,10 +114,19 @@ export default function Settings() {
         <div className="mt-3 flex items-center gap-3">
           <button
             onClick={onSave}
-            disabled={busy}
+            disabled={busy || testing}
             className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
           >
             Save
+          </button>
+          <button
+            onClick={onTest}
+            disabled={busy || testing || !webhook.trim()}
+            title="Send a sample payload to the URL above"
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
+          >
+            {testing && <SpinnerIcon className="h-3.5 w-3.5" />}
+            {testing ? "Sending…" : "Send test"}
           </button>
           {note && <span className="text-xs text-zinc-500">{note}</span>}
         </div>
@@ -109,11 +137,13 @@ export default function Settings() {
       <PruneSection />
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <h3 className="mb-3 text-sm font-medium text-zinc-200">Environment</h3>
-        <p className="mb-3 text-[11px] text-zinc-600">
-          Configured via environment variables (change requires a container
-          restart).
-        </p>
+        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+          Environment
+          <HelpTip>
+            Configured via environment variables (change requires a container
+            restart).
+          </HelpTip>
+        </h3>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
           <Row label="Stacks directory" value={data.stacksDir} mono />
           <Row label="Data directory" value={data.dataDir} mono />
@@ -172,13 +202,13 @@ function IntervalSection({
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <h3 className="mb-1 text-sm font-medium text-zinc-200">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         Automatic update check
+        <HelpTip>
+          How often HiveDock checks registries for newer images in the
+          background. Changes apply within a minute, no restart needed.
+        </HelpTip>
       </h3>
-      <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-        How often HiveDock checks registries for newer images in the
-        background.
-      </p>
       <div className="flex items-center gap-3">
         <select
           value={value}
@@ -233,13 +263,15 @@ function PruneSection() {
 
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <h3 className="mb-1 text-sm font-medium text-zinc-200">Maintenance</h3>
-      <p className="mb-3 text-[11px] leading-relaxed text-zinc-500">
-        Image updates leave the old, now-untagged image layers behind on disk.
-        Prune removes those dangling images and stale build cache. It never
-        touches tagged images, containers, volumes, or networks, so it is safe
-        to run any time.
-      </p>
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        Maintenance
+        <HelpTip>
+          Image updates leave the old, now-untagged image layers behind on
+          disk. Prune removes those dangling images and stale build cache. It
+          never touches tagged images, containers, volumes, or networks, so it
+          is safe to run any time.
+        </HelpTip>
+      </h3>
       <div className="flex items-center gap-3">
         <button
           onClick={onPrune}
