@@ -4,6 +4,11 @@ How Hivedock is built. Consolidates the decisions in `docs/CLAUDE.md` and
 `docs/PLAN.md`; where those disagree with this file, this file is the design of
 record — update both together. Read `docs/PRD.md` for *what/why*.
 
+> **Status:** all four original phases (truth model, discovery/homepage,
+> mutations, updates) are shipped, plus auth, self-update, per-card link
+> overrides, and URL-hash routing. "Phase N" tags below are kept as
+> provenance, not a roadmap — everything described here is live.
+
 ## 1. System overview
 
 Single Go binary, single container, single host. No agents, no external
@@ -14,14 +19,15 @@ services, no database server.
 │  hivedock (Go)                                                  │
 │                                                                 │
 │   HTTP (chi)                     watchers                       │
-│   ├── /api/health                ├── fsnotify(STACKS_DIR)       │
-│   ├── /api/stacks[/{name}]       └── docker events ────┐        │
-│   ├── /api/host/stats                                  ▼        │
-│   ├── /api/home  (Phase 2)               events.Hub (debounced) │
-│   ├── /api/updates (Phase 4)                  │                 │
+│   ├── /api/health  /api/app/update (self-update)                │
+│   ├── /api/stacks[/{name}]       ├── fsnotify(STACKS_DIR)       │
+│   ├── /api/host/stats            └── docker events ────┐        │
+│   ├── /api/home  /api/settings                         ▼        │
+│   ├── /api/updates                       events.Hub (debounced) │
+│   ├── /api/auth/*                             │                 │
 │   └── /api/ws  ◄──────────────────────────────┘                 │
-│         multiplexed: stacks:changed, logs:*, deploy:* (Ph3),    │
-│         stats (later)                                           │
+│         multiplexed: stacks:changed, logs:*, deploy:*,          │
+│         updates:changed                                         │
 │                                                                 │
 │   stacks.Manager ── scan compose files (source of truth)        │
 │                  └─ docker.Client (read) ─┐                     │
@@ -64,9 +70,12 @@ Daemon down → managed stacks still show, status `unknown`.
 
 ### 2.2 SQLite scope (app state only)
 
-`settings` (kv: check interval, etc.), `service_prefs`
-(`stack,service → hidden` for the homepage unhide toggle), and (Phase 4) cached
-update-check results. **Never** stack definitions.
+`settings` (kv: check interval, home layout blob, admin credentials, session
+tokens), `service_prefs` (`stack,service → {hidden, icon, display_name, url}` —
+the per-card overrides), `image_checks` (cached update-check results) and
+`image_ignores` (per-image pins). **Never** stack definitions. Migrations live
+in `store/migrations/*.sql`, applied in filename order and tracked in
+`schema_migrations`.
 
 ### 2.3 Real-time
 
@@ -76,7 +85,7 @@ meaningful lifecycle actions), and a 30 s periodic rescan as a fallback where
 inotify doesn't propagate (LXC double-bind, Docker Desktop virtiofs). Clients
 refetch REST on `stacks:changed`; log lines stream inline on the same socket.
 
-## 3. Discovery & homepage (Phase 2)
+## 3. Discovery & homepage
 
 The differentiator: a **zero-config** dashboard. Every attribute has a priority
 chain that ends in a sensible automatic default, so nothing needs labels — but
@@ -101,7 +110,7 @@ stack-level. For each attribute, first match wins:
 |---|---|
 | **name** | `hivedock.name` → `homepage.name` → humanized service name (single-candidate stack → stack name) |
 | **group** | `hivedock.group` → `homepage.group` → stack name |
-| **url** | `hivedock.url` → `homepage.href`/`homepage.url` → URL heuristic (§3.3) |
+| **url** | user link override (`service_prefs.url`) → `hivedock.url` → `homepage.href`/`homepage.url` → URL heuristic (§3.3) |
 | **icon** | `hivedock.icon` → `homepage.icon` → icon matcher on the image (§3.4) → letter avatar |
 | **description** | `hivedock.description` → `homepage.description` → empty |
 | **hidden** | `hivedock.hidden` → `homepage.hidden`(=/showstats absent) → auto-hide heuristic (§3.5) → **user override in SQLite wins over all** |
@@ -125,6 +134,14 @@ If a url label exists, use it verbatim. Otherwise derive from the service's
 - **host**: the host Hivedock is reached at — derived from the request `Host`
   header, overridable via a `PUBLIC_HOST`/base-URL setting. (DEPLOYMENT.md: give
   the box a static IP or links rot.)
+
+The heuristic only sees ports published on the service's **own** container, so
+two common setups produce no automatic link: host-network containers (no port
+mappings exist — e.g. Jellyfin) and services sharing another's netns
+(`network_mode: service:x`, ports live on `x` — e.g. qBittorrent behind
+Gluetun). The **per-card link override** (`service_prefs.url`, set in the card
+editor, wins over labels and the heuristic) is the reliable fix — persisted
+server-side, survives stack rename, empty reverts to automatic.
 
 ### 3.4 Icon matcher
 
@@ -165,28 +182,63 @@ postgres sidecar is auto-hidden until the user unhides it.
 
 ### 3.6 Home view
 
-Grouped card grid (by group), status dot per card (from the truth model),
-search/filter, the host-stats strip, and an empty state
-("No stacks found in `<STACKS_DIR>`…"). Cards link out via the resolved URL;
-multi-port cards expose the dropdown.
+A dense card grid — flat by default, or split into **user-defined groups** the
+user builds in a Customize mode (create/rename/delete groups, drag cards and
+group headers between real columns, pick column count 1–4 and tile size, sort by
+name/status/manual). The whole arrangement is one opaque JSON blob in `settings`
+(`home_layout`), owned by the frontend. Each card shows a status dot (truth
+model), links out via the resolved URL (multi-port → dropdown), and carries
+hover controls (edit name/icon/link, hide). **Sidecar rollup:** a stack's
+non-primary services (its datastores and helpers) don't get their own tiles —
+they collapse under the primary card's chevron (primary = a `hivedock.primary`
+label, else the service whose slug matches the stack name). Plus search/filter,
+the host-stats strip, and an empty state.
 
-## 4. Mutations (Phase 3, planned)
+## 4. Mutations
 
-Auth (single admin, bcrypt, session cookie, CSRF, `AUTH_DISABLED` escape hatch)
-lands before any mutation. Compose runner = subprocess wrapper for
-up/down/restart/pull/stop with WS-streamed output and a per-stack concurrency
-lock. Editor validates via `docker compose config` before save; save ≠ deploy.
-Create-stack = name → directory + template compose. See PLAN Phase 3.
+Auth (single admin, bcrypt, HttpOnly session cookie, double-submit CSRF,
+`AUTH_DISABLED` escape hatch) gates every mutation. The compose runner is a
+subprocess wrapper for up/down/restart/pull/stop/recreate/**update**
+(`up -d --pull always`, the digest-apply path) with WS-streamed output and a
+per-stack concurrency lock. **Per-service restart** scopes a `restart` to one
+service under the same lock. The editor validates via `docker compose config`
+before save; save ≠ deploy. Create-stack = name → directory + template compose.
+Rename/delete carry running-state guards and move `service_prefs` with the
+stack.
 
-## 5. Updates (Phase 4, planned)
+## 5. Updates
 
 Registry v2 client (anonymous token auth for Hub/ghcr/lscr→ghcr/quay, HEAD
 manifest digests, tag lists), a semver candidate engine (prefix/part-count/
-suffix preservation, signature-tag exclusion, calendar-version awareness) built
-**test-corpus-first** (`internal/registry/testdata/candidates.yaml`), a digest
-path for mutable tags, comment-preserving targeted tag rewrites (env-interpolated
-tags surfaced, never rewritten), and a cron scheduler. See PLAN Phase 4 and the
-risk register.
+suffix preservation, signature-tag exclusion, calendar-version awareness, stale-
+tag build-date guard) built **test-corpus-first**
+(`internal/registry/testdata/candidates.yaml`), a digest path for mutable tags,
+and comment-preserving targeted tag rewrites (env-interpolated tags surfaced,
+never rewritten). A background scheduler re-reads the interval each minute so
+Settings changes apply without a restart. Apply paths: semver → rewrite the
+`image:` line + redeploy; digest → `up -d --pull always` (no tag to rewrite).
+Per-image ignore pins a version (mutable even when up to date). No webhooks:
+update state surfaces on the Updates page and the sidebar badge.
+
+## 5a. Self-update
+
+Hivedock version-checks *itself*: `GET /api/app/update` compares the running
+version (build-time `-ldflags`) against the newest `ghcr.io/rodzalendo/hivedock`
+tag (15-min server cache; skipped for non-semver `dev`/`edge` builds).
+`POST /api/app/update` performs the swap: a container can't `compose up` itself,
+so it discovers its own compose project from the `com.docker.compose.*` labels
+on its container and launches a **detached helper** container (from the present
+image) that runs `compose pull && up -d` on the Hivedock project and outlives
+the replace. The SPA polls `/api/health` and reloads when the version changes.
+Failure modes (not compose-managed, pull fails) leave the old container running
+and report cleanly.
+
+## 5b. Routing
+
+The SPA uses the URL **hash** as its router (`#/stacks`, `#/updates`,
+`#/settings`, `#/stacks/<name>` for an open stack) via a dependency-free hook,
+so refresh and back/forward preserve the view. No server-side route config
+needed; the `NotFound` SPA fallback serves `index.html`.
 
 ## 6. Layout
 
@@ -201,10 +253,14 @@ internal/
   events/             pub/sub hub (debounced)
   watch/              fsnotify + docker events + rescan → hub
   hoststats/          /proc sampler
-  server/             chi router, REST handlers, multiplexed WS
+  server/             chi router, REST handlers, multiplexed WS, auth,
+                      self-update, deploy streaming, settings
   store/              SQLite + migrations (app state only)
-  discovery/          (Phase 2) resolver + icon matcher
-  registry/           (Phase 4) registry client + semver engine
-web/                  React SPA (embedded via go:embed)
+  discovery/          resolver + icon matcher (zero-config homepage)
+  updates/            update checker orchestration (registry ⋈ local images)
+  registry/           registry client + semver candidate engine
+  auth/               password hashing + token generation
+web/                  React SPA (embedded via go:embed); hash router,
+                      TanStack Query, views/ + components/
 deploy/, scripts/, docs/
 ```

@@ -1,8 +1,14 @@
 # Hivedock — Product Requirements
 
 *What* Hivedock is and *why*. For *how*, see `docs/ARCHITECTURE.md`; for order of
-work, `docs/PLAN.md`. This consolidates decisions already encoded across the
-repo — treat it as the scope contract, especially the non-goals.
+work and shipped history, `docs/PLAN.md`. This consolidates decisions already
+encoded across the repo — treat it as the scope contract, especially the
+non-goals.
+
+> **Status:** v1 shipped and in daily use. The three pillars below (stacks,
+> homepage, updates) plus auth, live streaming, self-update, and per-card
+> overrides are all live. This doc remains the scope contract for what
+> Hivedock *is* and — more importantly — what it deliberately is not.
 
 ## 1. Problem
 
@@ -30,6 +36,11 @@ One container that does all three, coherently, for **one host**:
 
 The wedge is the homepage: because Hivedock already knows your stacks, ports,
 and images, the dashboard is free and always accurate.
+
+Around those three: single-admin auth, live WebSocket streaming of everything,
+URL-hash routing (refresh keeps your place), and **one-click self-update** — the
+app checks for its own new release and can pull-and-recreate itself from the
+sidebar via a detached helper, no SSH required.
 
 ## 3. Users
 
@@ -83,6 +94,12 @@ Adding any of these must displace something, not just accrete:
 
 ## 7. Post-v1 parking lot (not commitments)
 
-`docker run → compose` converter · multiple webhook targets · update
-batching/schedules ("apply all patch updates Sunday 3am") · read-only public
-dashboard mode · Gotify/ntfy native · `homepage.* → hivedock.*` migration helper.
+`docker run → compose` converter · update batching/schedules ("apply all patch
+updates Sunday 3am" — the one feature that could eventually beat Watchtower
+*safely*) · read-only public dashboard mode · compose-config backup export (zip
+of the stacks dir + UI prefs) · `homepage.* → hivedock.*` migration helper.
+
+**Tried and removed:** outbound webhook notifications shipped briefly, then were
+cut — they added a config surface and a delivery-failure mode for little value
+over the in-app Updates page and sidebar badge. Update visibility stays in-app.
+Don't reintroduce a notification subsystem without a strong, specific reason.

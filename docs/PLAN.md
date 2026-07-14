@@ -2,6 +2,12 @@
 
 Sequenced for Claude Code sessions. Each phase ends with something runnable and demoable; each task is sized to fit one focused session. Don't start a phase until the previous one's exit criteria pass.
 
+> **This is the historical build log**, not current status. All phases below
+> shipped; Hivedock is released and in daily use (see the "Post-v1 status"
+> section at the end for what landed after v1). For the current picture read
+> `README.md` (features + how it works), `docs/PRD.md` (scope), and
+> `docs/ARCHITECTURE.md` (design of record).
+
 ## Phase 0 — Skeleton (1–2 sessions)
 
 Goal: `docker compose up` on the repo yields a served (empty) UI talking to a live backend.

@@ -4,32 +4,105 @@
 
 <h1 align="center">HiveDock</h1>
 
-<p align="center"><b>One container for your homelab's Docker: compose stack management, a zero-config app dashboard, and trustworthy image update checking. A single small binary.</b></p>
+<p align="center"><b>One container for your homelab's Docker: compose stack management, a zero-config app dashboard, and trustworthy image-update checking — in a single small binary.</b></p>
+
+<p align="center">
+  <code>docker compose up -d</code> · point it at your stacks directory · done.
+</p>
 
 <!-- screenshot: add docs/screenshots/home.png then uncomment
 ![Home dashboard](docs/screenshots/home.png)
 -->
 
-## Why HiveDock
+---
 
-Most homelabs end up running three separate tools: one to manage compose stacks, one as a start page with app tiles, and one to watch for image updates. HiveDock does all three in one container, and does a few things you will not find elsewhere:
+## The problem
 
-- **Zero-config dashboard.** No YAML to write for your start page. Cards, icons, links, and groups are derived from the compose files and containers you already have. Databases and sidecars auto-hide, and you can override anything per card (icon, visibility, group layout).
-- **Update suggestions you can trust.** The version engine only proposes tags on the same track as yours (same prefix, suffix, and shape), and cross-checks the candidate's build date against your current image, so a stale legacy tag can never masquerade as an update. Deliberately pinned versions can be ignored per image, so a bulk update never overwrites your choice.
-- **Your files stay the source of truth.** Stack definitions are never copied into a database. HiveDock reads the compose files in your stacks directory, and when it updates a tag it rewrites just that line, preserving comments and formatting. Point it at an existing stacks directory and it works immediately; nothing is ever locked in.
-- **Honest about ownership.** Stacks it did not create (external compose projects, plain `docker run` containers) are shown read-only and clearly labeled. Config drift between a running container and its file is detected and explained in plain language.
+If you self-host with Docker Compose on a single box, you probably run **three tools that don't know about each other**:
 
-## Features
+- **Dockge / Portainer** to manage stacks — edit compose, deploy, read logs.
+- **Homepage / Heimdall** as a start page of app tiles — hand-maintained YAML that slowly drifts from what's actually running.
+- **Watchtower / WUD** to find image updates — which either auto-updates and occasionally breaks things, or just notifies with no context.
 
-- **Stacks**: every compose stack and stray container in one list, in-browser compose and `.env` editing with server-side validation, deploy / pull / restart / stop with live streamed output, rename and delete with running-state guards, per-service logs, drift detection.
-- **Home**: auto-discovered app grid with icons (dashboard-icons plus custom icon URLs), clickable port links with a per-card link override (for host-network or shared-network apps whose ports can't be auto-detected), hide/show per card, groups with custom titles, drag-and-drop arrangement, column count, and name/status sorting.
-- **Updates**: semver-aware tag checking across Docker Hub, ghcr, lscr, and quay, digest checking for `latest`-style tags, one-click update and redeploy (single or bulk), per-image ignore for pinned versions.
-- **Ops**: single binary with embedded UI, SQLite for app state only, WebSocket live updates, session auth with CSRF protection, multi-arch images (amd64 and arm64), works in Docker-in-LXC. HiveDock checks for its own updates on load and can update itself from the sidebar (one click — a detached helper container swaps the image and the page reconnects).
+Three configs, three label schemes, three mental models. The dashboard lies the moment you add a container and forget to edit its YAML; the update tool can't tell a real new release from a stale legacy tag.
 
-<!-- screenshots: add docs/screenshots/stacks.png and updates.png then uncomment
-![Stacks view](docs/screenshots/stacks.png)
-![Updates view](docs/screenshots/updates.png)
--->
+## What HiveDock is
+
+**One container that does all three, coherently, for one host.** The insight that ties them together: because HiveDock already reads your compose files and talks to Docker, it *already knows* your stacks, services, ports, images, and health. So the dashboard is free and can never drift — it **is** derived from reality — and update checks have real version context. You write no dashboard config and adopt no new label scheme.
+
+It's a single Go binary with an embedded UI, ~30 MB image, no database server, no agents, no cloud. It reads the compose files you already have and never copies them into a database. Delete the HiveDock container and every stack keeps running, untouched.
+
+## Who it's for
+
+**The homelabber.** You run somewhere between 5 and 40 compose stacks on a NAS, a mini-PC, or a Proxmox LXC. You're comfortable with SSH and YAML and you *want* to keep editing files directly — you just want a UI that reflects and respects those files instead of hiding them behind a database. You value trust and predictability over a wall of features. This is the person HiveDock is built for.
+
+**The tidy self-hoster consolidating.** You're currently running Dockge + Homepage + Watchtower and you're tired of the moving parts. HiveDock reads your existing `homepage.*` labels as-is, so your dashboard keeps its identity with zero migration work, and you get one thing to update and back up instead of three.
+
+**Not the right fit if** you need multiple hosts, Kubernetes, a Portainer-style everything-console (registries, RBAC, teams), or hands-off automatic updates. Those are deliberate non-goals — see [docs/PRD.md](docs/PRD.md). HiveDock does depth on one host, not breadth across many.
+
+## Feature tour
+
+### Stacks — manage what's running
+- Every compose stack **and** every stray `docker run` container in one list, each labelled **managed** (has a compose file here, fully editable) or **external** (read-only — the UI never pretends to own something it doesn't).
+- In-browser **compose and `.env` editor**, validated with `docker compose config` before it will save. Save and deploy are separate steps.
+- **Lifecycle actions** — deploy (up), pull, restart, stop, and a force-recreate — with output **streamed live** to the browser as it happens, so you watch the pull and the recreate in real time, not a spinner.
+- **Per-service restart** — restart a single misbehaving container without touching the rest of the stack.
+- **Per-service logs** with follow, per-service filtering and color coding, severity highlighting (errors/warnings stand out), a copy button (all shown, or the last N lines), and an enlarge-to-fullscreen reading view.
+- **Drift detection** — when a running container's config no longer matches its compose file (you edited the file over SSH, or another tool deployed it), the stack shows a *drift* badge with a plain-language explanation and a force-recreate to clear it.
+- **Rename and delete** with running-state guards so you can't foot-gun a live stack.
+- A live **host-resource strip** (CPU, memory, disk) at the top — the numbers the container can actually see.
+
+### Home — a dashboard you never configure
+- An app grid **auto-derived from your stacks** — no dashboard YAML, ever. Names, icons, links, and grouping come from the compose files and containers you already have.
+- **Correct icons with zero config**, matched from the image against the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) set, cached locally, with a clean letter-avatar fallback so a tile is never a broken image.
+- **Clickable links** derived from published ports, with a per-card **link override** for the tricky cases the port heuristic can't see — host-network containers (e.g. Jellyfin) and services sharing another's network stack (e.g. qBittorrent behind Gluetun).
+- **Smart bundling** — databases, caches, and sidecars (Postgres, Redis, an Immich machine-learning worker) don't clutter the grid; they roll up under their app's card and expand on demand.
+- **Full customization that persists**: rename a card, set a custom icon or link, hide/show anything, create groups with custom titles, drag cards and groups between columns, pick the column count and tile size, sort by name or status. All stored server-side, per install.
+- Everything is an **override on top of a sensible default** — labels (`hivedock.*`, or legacy `homepage.*`) win if present, but nothing *requires* them.
+
+### Updates — suggestions you can trust
+- Checks for newer images across **Docker Hub, GHCR, LinuxServer (lscr.io), and Quay**, with anonymous auth and multi-arch-correct digest handling.
+- **Semver-aware**: it only proposes tags on *your* track — same prefix (`v`), same part count (`16` isn't the `16.4` family), same suffix (`-alpine`) — and labels the jump major / minor / patch. Calendar-versioned images are handled without a bogus semver label.
+- **Trustworthy by construction**: the candidate's build date is cross-checked against your current image, so a stale legacy tag can never masquerade as an upgrade. This engine is built test-corpus-first against real-world image tags.
+- **Digest checking** for `latest`-style mutable tags — when the tag hasn't moved names but the image underneath has, you get a "new digest" with a one-click **pull & redeploy**.
+- **One-click apply**: semver updates rewrite just the `image:` line in the compose file (comments and formatting preserved) and redeploy; single or bulk ("update all").
+- **Per-image ignore** to pin a version deliberately — including muting an image that's currently up to date, so a future update never nags you. Env-interpolated tags (`image: x:${TAG}`) are flagged as env-managed, never rewritten.
+- A configurable **background check interval** (or off), and a manual "check now" — with a webhook-free, in-app model: updates surface on the Updates page and as a sidebar badge.
+
+### Ops — runs itself, updates itself
+- **Single binary, embedded UI**, multi-arch images (amd64 + arm64), works in Docker-in-LXC. SQLite (pure-Go, no CGO) stores *only* app state — settings, UI prefs, cached check results — never stack definitions.
+- **Session auth** (single admin, bcrypt) with CSRF protection on every mutation and login rate-damping; an `AUTH_DISABLED` escape hatch for trusted LANs.
+- **Live everything** over a single multiplexed WebSocket — stack changes, deploy output, and log streams all push to the browser; no polling, no manual refresh.
+- **Real routing** — Stacks, Updates, Settings, and an open stack each live at their own URL, so a refresh or a bookmark keeps your place.
+- **Self-update from the sidebar**: HiveDock checks for its *own* new release on every load; when one exists the version turns into a one-click update that pulls the new image, recreates its container via a detached helper, and reconnects the page by itself — no SSH required. Every release ships with generated GitHub release notes linked right there.
+- **Maintenance**: a one-click prune of dangling images and build cache (never touching tagged images, volumes, or networks) to reclaim the disk that image updates leave behind.
+
+## How it works
+
+**The truth model.** On every change, HiveDock builds one picture of reality: it scans `STACKS_DIR` one level deep and parses each `compose.yaml` read-only (the *desired* state), then merges in the running containers grouped by their `com.docker.compose.project` label (the *actual* state). The join produces per-service status — desired image vs. running state and ports — and classifies each stack as **managed** (a compose file exists here → editable) or **external** (running but no compose file here → read-only). If the Docker daemon is down, managed stacks still render with an `unknown` status. Nothing about your stacks is stored; the model is rebuilt from files + Docker each time.
+
+**Zero-config discovery.** Every card attribute — name, group, URL, icon, description, visibility — resolves through a priority chain that *ends* in a sensible automatic default: a `hivedock.*` label wins, then a legacy `homepage.*` label, then the heuristic. The URL comes from published ports (with an override for host/shared-network apps); the icon comes from normalizing the image reference to a slug and matching it against an embedded dashboard-icons manifest, fetched once and cached under `DATA_DIR`. Infrastructure without a user destination (portless services, known datastores) auto-hides so the dashboard shows apps, not plumbing — and your explicit hide/show always wins.
+
+**Mutations shell out; reads use the SDK.** HiveDock reads Docker through the official Go SDK, but every state change runs the real `docker compose` binary as a subprocess (up/pull/restart/stop/recreate), streamed line-by-line to your browser and guarded by a per-stack lock so two operations never race. It is never a compose reimplementation — what you'd run by hand is what it runs. Compose files are only ever written in two places: your explicit save in the editor, and the single-line `image:` tag rewrite in the update flow (a targeted scalar edit that preserves comments and ordering — never a parse-and-dump).
+
+**The update engine.** A registry v2 client fetches tag lists and manifest digests (anonymous bearer tokens per registry; OCI + Docker Accept headers so multi-arch digests are correct). The semver engine proposes only same-track candidates and confirms each with a build-date check against your running image. For mutable `latest`-style tags it compares digests instead. Env-interpolated tags are surfaced but never touched.
+
+**Self-update, safely.** A container can't `compose up` itself — it would kill itself mid-recreate. So HiveDock discovers its own compose project from the labels Docker stamped on its container, launches a small **detached helper** container from the already-present image that runs `compose pull && up -d` on the HiveDock project, and survives its own replacement. The browser polls health and reloads when the new version answers. If anything's off, the old container is left untouched and you get a clear message.
+
+**Real-time.** One `events.Hub` fans debounced change signals to all WebSocket clients from three sources — fsnotify on `STACKS_DIR`, filtered Docker lifecycle events, and a periodic rescan as a fallback where inotify doesn't propagate (LXC binds, Docker Desktop). Clients refetch on a change signal; logs and deploy output stream inline on the same socket.
+
+## HiveDock vs. the three tools it replaces
+
+| | Dockge / Portainer | Homepage / Heimdall | Watchtower / WUD | **HiveDock** |
+|---|:--:|:--:|:--:|:--:|
+| Manage compose stacks | ✅ | — | — | ✅ |
+| Dashboard of apps | — | ✅ | — | ✅ **(zero-config, can't drift)** |
+| Image-update checking | — | — | ✅ | ✅ **(semver + build-date verified)** |
+| Config you write for the dashboard | — | hand-maintained YAML | — | **none** |
+| Files stay the source of truth | Dockge: ✅ | n/a | n/a | ✅ |
+| Auto-update danger | — | — | opt-in, unattended | **never — human decides** |
+| Self-updates from the UI | — | — | — | ✅ |
+| Scope | one host | any | any | **one host, on purpose** |
 
 ## Install
 
@@ -48,13 +121,16 @@ services:
       # container. Mount it 1:1 (see volumes below).
       - STACKS_DIR=/opt/stacks
       - DATA_DIR=/app/data
+      - PUBLIC_HOST=192.168.1.50:5001   # how you reach the box (keeps links stable)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
       - /opt/stacks:/opt/stacks
 ```
 
-Open `http://<your-host>:5001` and create the admin account on the first-run screen. Your existing stacks show up immediately.
+Open `http://<your-host>:5001`, create the admin account on the first-run screen, and your existing stacks appear immediately. From then on you can update HiveDock itself with one click from the sidebar.
+
+> **Image tags:** `:latest` tracks stable releases, `:X.Y.Z` pins one, `:edge` follows every push to `main`. The sidebar self-update needs a release build (`:latest` or a version tag).
 
 ## Configuration
 
@@ -63,11 +139,11 @@ Everything is configured with environment variables:
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `5001` | HTTP listen port. |
-| `STACKS_DIR` | `/opt/stacks` | Directory scanned for `<stack>/compose.yaml`. Must be the same path inside and outside the container. |
+| `STACKS_DIR` | `/opt/stacks` | Directory scanned for `<stack>/compose.yaml`. **Must be the same path inside and outside the container** (compose resolves relative paths against it). |
 | `DATA_DIR` | `/app/data` | SQLite, icon cache, app state. |
 | `AUTH_DISABLED` | `false` | Skip login entirely. Only for trusted LANs. |
-| `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links do not rot. |
-| `CHECK_INTERVAL` | `30m` | Periodic update check cadence. `off` disables it; also editable live in Settings. |
+| `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links don't rot. |
+| `CHECK_INTERVAL` | `30m` | Background update-check cadence. `off` disables it; also editable live in Settings. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
 ### Auth
@@ -80,7 +156,7 @@ Front HiveDock with your proxy of choice and forward `X-Forwarded-Proto`, so the
 
 ### Labels (optional)
 
-The dashboard needs no labels, but you can override any card:
+The dashboard needs no labels, but you can override any card from the compose file (or, for most of these, right in the UI):
 
 ```yaml
 services:
@@ -90,16 +166,17 @@ services:
       hivedock.name: My App
       hivedock.group: Media
       hivedock.icon: jellyfin        # dashboard-icons slug or a full image URL
-      hivedock.url: https://app.lan
+      hivedock.url: https://app.lan  # for host/shared-network apps
       hivedock.hidden: "true"
+      hivedock.primary: "true"       # make this the stack's main card
 ```
 
-Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.description`) are also read as-is, so a labeled stack keeps its identity with zero migration work.
+Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.description`) are read as-is, so a labeled stack keeps its identity with zero migration work.
 
-## How it is built
+## How it's built
 
-A Go backend (chi router, Docker SDK for reads, `docker compose` subprocess for mutations) with an embedded React + Tailwind frontend, compiled into one static binary in a multi-stage Docker build. SQLite (pure Go driver, no CGO) stores only app state: settings, UI preferences, cached update results. Stack definitions live exclusively in your compose files.
+A Go backend (chi router, Docker SDK for reads, `docker compose` subprocess for mutations) with an embedded React + Tailwind frontend, compiled into one static binary in a multi-stage Docker build. SQLite (pure-Go driver, no CGO) stores only app state: settings, UI preferences, cached update results. Stack definitions live exclusively in your compose files. Multi-arch images are published to GHCR on every tagged release.
 
 The entire codebase was written with [Claude](https://claude.com): architecture, backend, frontend, tests, and CI, end to end.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of record and [docs/PRD.md](docs/PRD.md) for the product spec.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design of record, [docs/PRD.md](docs/PRD.md) for the product spec and scope contract, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the reference deployment.

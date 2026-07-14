@@ -125,18 +125,7 @@ export default function LogsPanel({
         </select>
       )}
 
-      <CopyMenu onCopy={copy} disabled={shown.length === 0} />
-      {copied && <span className="text-zinc-500">{copied}</span>}
-
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="rounded border border-zinc-700 px-2 py-1 text-zinc-300 transition hover:bg-zinc-800"
-        title={expanded ? "Shrink logs" : "Enlarge logs for reading"}
-      >
-        {expanded ? "Shrink" : "Enlarge"}
-      </button>
-
-      <span className="ml-auto flex items-center gap-1.5 text-zinc-500">
+      <span className="flex items-center gap-1.5 text-zinc-500">
         <span
           className={`inline-block h-2 w-2 rounded-full ${
             connected ? "bg-green-500" : "bg-zinc-600"
@@ -144,6 +133,19 @@ export default function LogsPanel({
         />
         {connected ? "streaming" : follow ? "connecting…" : "paused"}
       </span>
+
+      {/* Actions sit on the right — where window/toolbar controls are expected. */}
+      <div className="ml-auto flex items-center gap-3">
+        {copied && <span className="text-zinc-500">{copied}</span>}
+        <CopyMenu onCopy={copy} disabled={shown.length === 0} />
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="rounded border border-zinc-700 px-2 py-1 text-zinc-300 transition hover:bg-zinc-800"
+          title={expanded ? "Shrink logs" : "Enlarge logs for reading"}
+        >
+          {expanded ? "Shrink" : "Enlarge"}
+        </button>
+      </div>
     </div>
   );
 
@@ -243,7 +245,7 @@ function CopyMenu({
         ▾
       </button>
       {open && (
-        <div className="absolute left-0 top-8 z-10 w-32 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
+        <div className="absolute right-0 top-8 z-10 w-32 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl">
           {[100, 500, 1000].map((n) => (
             <button
               key={n}
