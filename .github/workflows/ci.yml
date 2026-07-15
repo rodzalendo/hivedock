@@ -37,6 +37,17 @@ jobs:
             exit 1
           fi
 
+      # No shell interpolation in non-test Go (invariant 9 / HARDENING.md §4.3):
+      # exec.Command argument arrays only — never `sh -c` and never a shell
+      # container entrypoint. The self-update helper is now a `hivedock
+      # apply-update` subcommand instead of a `sh -c` compose pipeline.
+      - name: No shell exec in Go
+        run: |
+          if grep -rnE '"(sh|bash)"[[:space:]]*,[[:space:]]*"-c"|"--entrypoint"[[:space:]]*,[[:space:]]*"(sh|bash)"' --include='*.go' --exclude='*_test.go' cmd internal; then
+            echo "::error::shell exec (sh -c / shell entrypoint) is banned in non-test Go — use exec.Command argument arrays"
+            exit 1
+          fi
+
   frontend:
     name: Web typecheck + test + lint
     runs-on: ubuntu-latest

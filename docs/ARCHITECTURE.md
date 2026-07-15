@@ -50,6 +50,10 @@ reads, subprocess `docker compose` for mutations, `modernc.org/sqlite` (no CGO).
 3. The UI never lies: external containers shown read-only; drift surfaced; real
    stderr on failure.
 4. `STACKS_DIR` resolves to the same path inside and outside the container.
+5. No auth-bypass switch; trusted-header trust is decided by the real TCP peer.
+6. No shell interpolation — `exec.Command` argument arrays only (CI-enforced).
+7. Self-update applies only cosign-verified, digest-pinned images strictly newer
+   than the running version.
 
 ## 2. Data model & state
 
@@ -220,18 +224,45 @@ Settings changes apply without a restart. Apply paths: semver → rewrite the
 Per-image ignore pins a version (mutable even when up to date). No webhooks:
 update state surfaces on the Updates page and the sidebar badge.
 
-## 5a. Self-update
+## 5a. Self-update (verified, digest-pinned — HARDENING.md §3)
 
-Hivedock version-checks *itself*: `GET /api/app/update` compares the running
-version (build-time `-ldflags`) against the newest `ghcr.io/rodzalendo/hivedock`
-tag (15-min server cache; skipped for non-semver `dev`/`edge` builds).
-`POST /api/app/update` performs the swap: a container can't `compose up` itself,
-so it discovers its own compose project from the `com.docker.compose.*` labels
-on its container and launches a **detached helper** container (from the present
-image) that runs `compose pull && up -d` on the Hivedock project and outlives
-the replace. The SPA polls `/api/health` and reloads when the version changes.
-Failure modes (not compose-managed, pull fails) leave the old container running
-and report cleanly.
+Hivedock version-checks *itself* and verifies what it finds before offering it.
+
+**Check** — `GET /api/app/update` compares the running version (build-time
+`-ldflags`) against the newest `ghcr.io/rodzalendo/hivedock` tag (the semver
+engine enforces strictly-greater plus the stale-tag guard — that *is* the
+downgrade guard), then resolves the candidate's manifest digest and
+cosign-verifies it against Hivedock's own release-workflow identity
+(`…/release.yml@refs/tags/v*`, issuer `token.actions.githubusercontent.com`,
+both baked in). Verification execs the **bundled cosign binary** (no new Go
+deps, no shell — invariant 9) offline: the Rekor proof travels with the
+signature and the sigstore trust root is seeded into the image, so the only
+outbound call is fetching the signature from ghcr. A newer-but-unverifiable tag
+is **not** offered — it surfaces a `verifyFailed` alert, because that alarm is
+the point. The verified digest is cached (15 min) for the apply step. Skipped
+for non-semver `dev`/`edge` builds and for update mode `off`.
+
+**Apply** — `POST /api/app/update` (only in mode `full`) deploys that exact
+verified digest. A container can't `compose up` itself, so Hivedock discovers
+its own compose project from the `com.docker.compose.*` labels and launches a
+**detached helper** — this same binary invoked as `hivedock apply-update`, from
+the currently-running image pinned by *its own* repo digest (already-trusted
+bytes). The helper pulls `…/hivedock@<digest>` by digest, retags it locally to
+the compose `image:` ref, and runs `compose up -d --pull never` so the recreate
+uses those precise bytes even if the remote tag moved since the check; a
+post-check confirms the deployed image carries the approved digest. Every step
+is an argument-array exec — no shell anywhere. The SPA polls `/api/health` and
+reloads when the version changes. Failure modes (not compose-managed, pull
+fails, verify fails) leave the old container running and report cleanly; SSH is
+the universal fallback.
+
+**Modes** (`app_update_mode` setting): `full` (verify + one-click apply,
+default), `check-only` (verify + alert, no apply), `off` (no check at all).
+
+**Release pipeline** — `.github/workflows/release.yml` builds multi-arch
+(amd64+arm64), attaches SLSA provenance + an SBOM, and cosign-signs the pushed
+digest keyless via GitHub Actions OIDC (no long-lived key; `id-token: write`,
+gated on a `release` environment).
 
 ## 5b. Routing
 

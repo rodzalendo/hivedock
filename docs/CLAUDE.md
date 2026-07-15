@@ -32,6 +32,8 @@ Always run `task test` and `task lint` before considering a task done. Phase exi
 5. **No mutations without auth.** Every mutating endpoint requires a valid session (+ CSRF for unsafe methods) or a trusted-proxy header from a configured CIDR. `AUTH_DISABLED` was removed — there is no auth-bypass switch, and one must never be reintroduced (see docs/HARDENING.md §2). Trusted-header trust is decided by the real TCP peer (captured before `X-Forwarded-For` rewriting), never a forwarded header.
 6. **Scope:** check `docs/PRD.md` non-goals before adding features. Multi-host, k8s, widgets, auto-update are out.
 7. **Test deployments target `/opt/stacks-test` on PCT 102.** Never point a dev/test build at the real `/opt/stacks`, and never run destructive operations against stacks Hivedock didn't create there. Switching to the real stacks dir happens once, deliberately, after Phase 3 exit criteria pass (see docs/DEPLOYMENT.md).
+8. **No shell interpolation.** `exec.Command` argument arrays only — never `sh -c`/`bash -c` and never a shell container entrypoint. Enforced by a CI grep gate over non-test Go (docs/HARDENING.md §4.3). The self-update helper runs as the `hivedock apply-update` subcommand, not a shelled-out pipeline.
+9. **Self-update applies only cosign-verified, digest-pinned images** strictly newer than the running version (docs/HARDENING.md §3). The check verifies the candidate's signature against the release-workflow identity before offering it (failure → alert, never a silent skip); the apply pulls the exact verified digest, never a tag. Don't reintroduce a tag-based `compose pull` self-update.
 
 ## Conventions
 

@@ -74,7 +74,7 @@ It's a single Go binary with an embedded UI, ~30 MB image, no database server, n
 - **Session auth** (single admin, bcrypt) with CSRF protection on every mutation and login rate-damping; an `AUTH_DISABLED` escape hatch for trusted LANs.
 - **Live everything** over a single multiplexed WebSocket — stack changes, deploy output, and log streams all push to the browser; no polling, no manual refresh.
 - **Real routing** — Stacks, Updates, Settings, and an open stack each live at their own URL, so a refresh or a bookmark keeps your place.
-- **Self-update from the sidebar**: HiveDock checks for its *own* new release on every load; when one exists the version turns into a one-click update that pulls the new image, recreates its container via a detached helper, and reconnects the page by itself — no SSH required. Every release ships with generated GitHub release notes linked right there.
+- **Verified self-update from the sidebar**: HiveDock checks for its *own* new release on every load; when one exists the version turns into a one-click update. Every release is cosign-signed (keyless, via GitHub Actions OIDC), and HiveDock **verifies that signature before offering the update and pins the exact verified digest** when applying it — a detached helper pulls those precise bytes, recreates the container, and the page reconnects by itself, no SSH required. If a newer tag ever fails verification you get an alert, not an offer. Choose `full` / `check-only` / `off` in Settings. Every release ships with generated GitHub release notes linked right there.
 - **Maintenance**: a one-click prune of dangling images and build cache (never touching tagged images, volumes, or networks) to reclaim the disk that image updates leave behind.
 
 ## How it works
@@ -184,9 +184,9 @@ Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.des
 
 ## Security & privacy
 
-HiveDock holds the Docker socket, so it's honest about what that means: **socket access is root-equivalent** — run HiveDock behind your network boundary (LAN/VPN), and only expose it to the internet behind a reverse proxy that does its own auth. It ships with single-admin auth (bcrypt, CSRF-protected mutations, login rate-damping), same-origin WebSocket enforcement, server-side sanitization of container log output, and a baseline CSP.
+HiveDock holds the Docker socket, so it's honest about what that means: **socket access is root-equivalent** — run HiveDock behind your network boundary (LAN/VPN), and only expose it to the internet behind a reverse proxy that does its own auth. It ships with single-admin auth (bcrypt, CSRF-protected mutations, login rate-damping), same-origin WebSocket enforcement, server-side sanitization of container log output, a baseline CSP, and a **cosign-verified, digest-pinned self-update** (keyless-signed releases; a failed signature check surfaces an alert instead of an update).
 
-**It does not phone home.** No analytics, no telemetry. The only outbound calls are: `ghcr.io` to check for a newer HiveDock release, the container registries your own stacks use (for image-update checks), and icon CDNs once per new image (then cached and served locally). That's the complete list.
+**It does not phone home.** No analytics, no telemetry. The only outbound calls are: `ghcr.io` to check for a newer HiveDock release and fetch its signature to verify (transparency-log proof checked offline against a baked-in trust root), the container registries your own stacks use (for image-update checks), and icon CDNs once per new image (then cached and served locally). That's the complete list.
 
 See [SECURITY.md](SECURITY.md) for the full posture, the trust model, how to report a vulnerability, and current limitations (including the `AUTH_DISABLED` escape hatch — don't use it on an untrusted network).
 

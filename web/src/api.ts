@@ -462,12 +462,15 @@ export async function saveEnv(name: string, content: string): Promise<EnvFile> {
 
 // ---- Settings ----
 
+export type UpdateMode = "full" | "check-only" | "off";
+
 export interface Settings {
   stacksDir: string;
   dataDir: string;
   checkInterval: string;
   publicHost: string;
   authMode: string;
+  updateMode: UpdateMode;
   version: string;
 }
 
@@ -475,8 +478,10 @@ export const fetchSettings = () => getJSON<Settings>("/api/settings");
 
 // saveSettings patches the editable settings; omit a field to leave it as-is.
 // checkInterval: "off", a duration like "30m"/"6h", or "" to revert to env.
+// updateMode: "full" | "check-only" | "off" (self-update verification/apply).
 export async function saveSettings(patch: {
   checkInterval?: string;
+  updateMode?: UpdateMode;
 }): Promise<Settings> {
   const res = await mutate("/api/settings", "PUT", patch);
   return (await res.json()) as Settings;
@@ -490,8 +495,10 @@ export interface AppUpdate {
   current: string;
   candidate?: string;
   hasUpdate: boolean;
-  checkable: boolean; // false for dev/edge builds
+  checkable: boolean; // false for dev/edge builds or update mode "off"
   notesUrl?: string;
+  mode: UpdateMode; // full | check-only | off
+  verifyFailed?: boolean; // a newer tag exists but its signature failed to verify
 }
 
 // fetchAppUpdate reports whether a newer HiveDock release is published

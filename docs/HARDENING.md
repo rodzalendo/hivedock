@@ -26,8 +26,17 @@ merge (update both together, per house rules). `docs/PRD.md` non-goals still bin
 > there is no password-change endpoint yet. Remaining Phase-A polish: copy-paste
 > proxy snippets and a "disable password login" toggle (§2.2/§2.4 nice-to-haves).
 >
-> **Not yet done:** §3 (self-update verification), §4.1–§4.3, §4.5, §4.7, §4.8,
-> §5, §6, and `THREAT_MODEL.md`.
+> **Landed (Phase B — supply chain):** §3 complete. Releases are cosign-signed
+> keyless via GitHub Actions OIDC with SLSA provenance + SBOM, multi-arch
+> (amd64+arm64), gated on a `release` environment. The in-app check resolves the
+> candidate's digest and cosign-verifies it (bundled cosign binary, offline
+> against a seeded sigstore trust root — outbound stays ghcr-only) before
+> offering it; a failed verify surfaces an alert, never an offer. The apply path
+> pulls the exact verified digest and recreates via `up -d --pull never` from a
+> `hivedock apply-update` helper subcommand — which retired the last `sh -c`, so
+> the §4.3 no-shell CI gate landed too. Update modes `full`/`check-only`/`off`.
+>
+> **Not yet done:** §4.1, §4.2, §4.5, §4.7, §4.8, §5, §6, and `THREAT_MODEL.md`.
 
 ## 1. Scope
 
@@ -103,11 +112,17 @@ after. This also replaces the dev-workflow use of `AUTH_DISABLED`.
 - WebSocket upgrades authenticate the cookie the same as REST (see §4.4 for
   Origin).
 
-## 3. Self-update, verified end to end
+## 3. Self-update, verified end to end — ✅ shipped (Phase B)
 
 The feature stays (trust-root argument lives in `THREAT_MODEL.md`); what changes
 is that every step from tag to running container is now verified, and the gap
-between "checked" and "applied" is closed.
+between "checked" and "applied" is closed. Implementation notes below record how
+it shipped; the design as described held, with two concrete choices: in-app
+verification execs a **bundled cosign binary** (chosen over vendoring the
+sigstore-go library, which would have forced a Go-version bump and a large
+dependency tree — the repo stays stdlib-first on Go 1.23), and verification runs
+**offline** against a trust root seeded into the image so the outbound inventory
+(§3.5) stays ghcr-only in the common case.
 
 ### 3.1 Release pipeline
 
@@ -169,7 +184,10 @@ stays the trigger. If launch-day optics end up mattering more, defaulting to
 Goes into the README verbatim, because "does it phone home" appears in every
 thread:
 
-1. `ghcr.io`, version check for Hivedock itself (this feature; off = no call).
+1. `ghcr.io`, version check for Hivedock itself and its cosign signature fetch
+   (this feature; `off` = no call). The transparency-log proof is verified
+   offline against a trust root baked into the image, so Rekor is not contacted;
+   cosign may occasionally refresh an expired root from the sigstore TUF CDN.
 2. Registries you configure, for image update checking.
 3. Icon CDNs (dashboard-icons / selfh.st), once per newly seen image, then cached
    on disk and served locally.
@@ -196,11 +214,15 @@ resolved `STACKS_DIR`. Symlinks inside the tree are followed but their targets
 must still resolve inside the root; anything escaping is refused with a clear
 error. Property tests feed traversal and symlink attempts.
 
-### 4.3 Subprocess discipline
+### 4.3 Subprocess discipline — ✅ shipped (Phase B)
 
 `exec.Command` with argument arrays only, no shell, anywhere. Enforced by a CI
-grep gate that fails the build on `sh -c` / `bash -c` in non-test Go code, so
-the claim "no shell interpolation" is checkable, not aspirational.
+grep gate (`.github/workflows/ci.yml`) that fails the build on `sh -c` /
+`bash -c` — and a shell container entrypoint — in non-test Go code, so the claim
+"no shell interpolation" is checkable, not aspirational. This was deferred until
+Phase B because the old self-update helper shelled out a `compose pull && up -d`
+pipeline; §3.3 replaced it with the `hivedock apply-update` subcommand, so the
+gate could land clean.
 
 ### 4.4 WebSocket origin — ✅ shipped (v0.3.2)
 
@@ -336,7 +358,7 @@ subsystem being rebuilt. `/api/settings` is explicitly excluded.
 | Phase | Ships | Exit criteria | Size |
 |---|---|---|---|
 | **A — footgun & docs** | §2 complete (removal + boot refusal, trusted-header auth, first-run token, rate limiting, session hardening); `SECURITY.md`; `THREAT_MODEL.md`; repo hygiene | Boot with `AUTH_DISABLED` fails with the message; setup unreachable without log token; fail2ban filter tested against real log output; forward-auth verified behind Authelia on PCT 102 | 1 weekend |
-| **B — supply chain** | §3 complete: cosign in CI, verify-in-app, digest-pinned helper flow, downgrade guard, modes, outbound inventory; multi-arch builds | A tampered/unsigned tag is refused and surfaces the alert state; end-to-end self-update on PCT 102 lands on the exact approved digest; arm64 image boots | 1 weekend |
+| **B — supply chain** ✅ | §3 complete: cosign in CI, verify-in-app, digest-pinned helper flow, downgrade guard, modes, outbound inventory; multi-arch builds; §4.3 no-shell gate | A tampered/unsigned tag is refused and surfaces the alert state; end-to-end self-update on PCT 102 lands on the exact approved digest; arm64 image boots | 1 weekend |
 | **C — hardening pass** | §4 complete with tests; README security section | Traversal/symlink property tests green; WS upgrade rejects foreign Origin; CSP has zero external origins; grep gates wired into CI and failing on planted violations | 1 weekend |
 | **D — file trust** | §5 complete; golden-file + fuzz corpora linked from README with a "PR tags that fool it" invitation | Concurrent-edit save returns 409; rewriter fuzzer runs clean; git opt-in produces the two-commit pattern; a deliberately imperfect rewrite aborts | 1–2 weekends |
 | **E — ops** | §6 complete; hardened compose + proxy doc | 30-stack sweep stays under per-registry limits with jitter visible in logs; parity mismatch boots read-only with banner; read-only token rejects non-allowlisted routes; podman banner fires | 1 weekend |

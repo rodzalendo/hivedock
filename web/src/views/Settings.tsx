@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchSettings, saveSettings, pruneSystem } from "../api";
+import {
+  fetchSettings,
+  saveSettings,
+  pruneSystem,
+  type UpdateMode,
+} from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
 
@@ -26,6 +31,8 @@ export default function Settings() {
       </h2>
 
       <IntervalSection current={data.checkInterval} onSaved={refetch} />
+
+      <UpdateModeSection current={data.updateMode} onSaved={refetch} />
 
       <PruneSection />
 
@@ -111,6 +118,98 @@ function IntervalSection({
             </option>
           ))}
         </select>
+        <button
+          onClick={onSave}
+          disabled={busy}
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
+        >
+          Save
+        </button>
+        {note && <span className="text-xs text-zinc-500">{note}</span>}
+      </div>
+    </section>
+  );
+}
+
+// UpdateModeSection controls how HiveDock updates itself. Releases are cosign-
+// signed; HiveDock verifies the signature before offering or applying an update.
+// Applies immediately (the next update check reads it).
+function UpdateModeSection({
+  current,
+  onSaved,
+}: {
+  current: UpdateMode;
+  onSaved: () => void;
+}) {
+  const options: { value: UpdateMode; label: string; desc: string }[] = [
+    {
+      value: "full",
+      label: "Full",
+      desc: "Check for new releases, verify their signatures, and allow one-click updates from the sidebar.",
+    },
+    {
+      value: "check-only",
+      label: "Check only",
+      desc: "Check and verify, but never apply automatically — update manually from a shell.",
+    },
+    {
+      value: "off",
+      label: "Off",
+      desc: "No version check at all (for air-gapped installs).",
+    },
+  ];
+  const [value, setValue] = useState<UpdateMode>(current);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function onSave() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await saveSettings({ updateMode: value });
+      onSaved();
+      setNote("Saved.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        HiveDock self-update
+        <HelpTip>
+          Release images are cosign-signed via GitHub Actions. HiveDock verifies
+          that signature and pins the exact digest before offering or applying
+          an update to itself.
+        </HelpTip>
+      </h3>
+      <div className="space-y-2">
+        {options.map((o) => (
+          <label
+            key={o.value}
+            className="flex cursor-pointer items-start gap-2.5"
+          >
+            <input
+              type="radio"
+              name="updateMode"
+              value={o.value}
+              checked={value === o.value}
+              onChange={() => setValue(o.value)}
+              className="mt-0.5 accent-accent-600"
+            />
+            <span>
+              <span className="text-sm text-zinc-200">{o.label}</span>
+              <span className="block text-[11px] leading-relaxed text-zinc-500">
+                {o.desc}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-3">
         <button
           onClick={onSave}
           disabled={busy}

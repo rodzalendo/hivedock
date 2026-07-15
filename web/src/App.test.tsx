@@ -10,7 +10,7 @@ function jsonResponse(body: unknown) {
   });
 }
 
-function mockApi() {
+function mockApi(appUpdate?: unknown) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -68,11 +68,14 @@ function mockApi() {
         });
       }
       if (url.includes("/api/app/update")) {
-        return jsonResponse({
-          current: "1.2.3",
-          hasUpdate: false,
-          checkable: true,
-        });
+        return jsonResponse(
+          appUpdate ?? {
+            current: "1.2.3",
+            hasUpdate: false,
+            checkable: true,
+            mode: "full",
+          },
+        );
       }
       if (url.includes("/api/health")) {
         return jsonResponse({
@@ -130,4 +133,25 @@ test("sidebar shows backend health and version", async () => {
     expect(screen.getByText(/Backend ok/)).toBeInTheDocument(),
   );
   await waitFor(() => expect(screen.getByText("v1.2.3")).toBeInTheDocument());
+});
+
+test("a failed signature check surfaces the alert state, not an update offer", async () => {
+  // A newer tag exists but its signature did not verify: HiveDock must never
+  // offer it — it shows the alarm instead (HARDENING.md §3.2).
+  mockApi({
+    current: "1.2.3",
+    hasUpdate: false,
+    checkable: true,
+    mode: "full",
+    verifyFailed: true,
+  });
+  renderApp();
+
+  const pill = await screen.findByTitle(/signature could not be verified/i);
+  fireEvent.click(pill);
+  expect(screen.getByText(/Signature check failed/i)).toBeInTheDocument();
+  // Crucially, no apply affordance is offered.
+  expect(
+    screen.queryByRole("button", { name: /Update now/i }),
+  ).not.toBeInTheDocument();
 });

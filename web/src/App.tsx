@@ -208,6 +208,18 @@ function VersionLine() {
           <span aria-hidden>→</span>
           {data.candidate}
         </button>
+      ) : data.verifyFailed ? (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-400 transition hover:bg-red-500/20"
+          title="A newer HiveDock tag exists but its signature could not be verified"
+        >
+          {label}
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full bg-red-500"
+            aria-hidden
+          />
+        </button>
       ) : data.checkable ? (
         <button
           onClick={() => setOpen((v) => !v)}
@@ -247,31 +259,67 @@ function VersionLine() {
                   Release notes ↗
                 </a>
               )}
-              <div className="mt-2.5 flex items-center gap-2">
-                <button
-                  onClick={() => void startUpdate()}
-                  disabled={phase === "updating"}
-                  className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
-                >
-                  {phase === "updating" ? "Updating…" : "Update now"}
-                </button>
-                {phase !== "updating" && (
-                  <button
-                    onClick={() => setOpen(false)}
-                    className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
-                  >
-                    Later
-                  </button>
-                )}
-              </div>
-              {phase === "updating" && (
-                <p className="mt-2 text-[11px] text-zinc-500">
-                  Swapping containers — waiting for the new version…
+              {data.mode === "check-only" ? (
+                <p className="mt-2.5 rounded-md bg-zinc-800/60 px-2 py-1.5 text-[11px] leading-relaxed text-zinc-400">
+                  One-click update is off (check-only mode). Update from a shell:
+                  <code className="mt-1 block font-mono text-[10px] text-zinc-300">
+                    docker compose pull &amp;&amp; docker compose up -d
+                  </code>
+                  or switch to Full in Settings.
                 </p>
+              ) : (
+                <>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <button
+                      onClick={() => void startUpdate()}
+                      disabled={phase === "updating"}
+                      className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-60"
+                    >
+                      {phase === "updating" ? "Updating…" : "Update now"}
+                    </button>
+                    {phase !== "updating" && (
+                      <button
+                        onClick={() => setOpen(false)}
+                        className="rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+                      >
+                        Later
+                      </button>
+                    )}
+                  </div>
+                  {phase === "updating" && (
+                    <p className="mt-2 text-[11px] text-zinc-500">
+                      Swapping containers — waiting for the new version…
+                    </p>
+                  )}
+                  {error && (
+                    <p className="mt-2 text-[11px] text-red-400">{error}</p>
+                  )}
+                </>
               )}
-              {error && (
-                <p className="mt-2 text-[11px] text-red-400">{error}</p>
-              )}
+            </>
+          ) : data.verifyFailed ? (
+            <>
+              <h4 className="text-xs font-semibold text-zinc-100">
+                Signature check failed
+              </h4>
+              <p className="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-red-400">
+                <span
+                  className="mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+                  aria-hidden
+                />
+                A newer tag was published, but its signature could not be
+                verified — so it will not be offered. This can mean a release is
+                still publishing, or a tampered image. Check the server logs and
+                update only from a trusted source.
+              </p>
+              <a
+                href="https://github.com/rodzalendo/hivedock/releases"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1.5 inline-block text-[11px] text-accent-500 hover:underline"
+              >
+                All releases ↗
+              </a>
             </>
           ) : (
             <>

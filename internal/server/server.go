@@ -60,7 +60,10 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 	}
 	checker := updates.NewChecker(registry.NewClient(nil), local, logger)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker, login: newLoginLimiter()}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker, login: newLoginLimiter(),
+		verify:  cosignVerifier{},        // §3.2 in-app signature verification (bundled cosign)
+		selfReg: registry.NewClient(nil), // resolves the candidate release digest to verify
+	}
 
 	// First-run: bootstrap the admin from env, or mint a one-time setup token.
 	api.initFirstRun()
@@ -134,8 +137,10 @@ type api struct {
 	icons   *discovery.IconResolver
 	runner  *compose.Runner
 	checker *updates.Checker
-	mux     http.Handler   // the built router (returned by New)
-	login   *loginLimiter  // brute-force damper for login/setup
+	verify  imageVerifier // §3.2 cosign signature verification (execs bundled cosign)
+	selfReg selfRegistry  // resolves the candidate release digest to verify/deploy
+	mux     http.Handler  // the built router (returned by New)
+	login   *loginLimiter // brute-force damper for login/setup
 
 	checking     atomic.Bool // guards against concurrent update-check runs
 	selfUpdating atomic.Bool // guards against concurrent self-updates

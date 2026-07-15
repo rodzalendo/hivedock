@@ -16,7 +16,8 @@ type settingsResponse struct {
 	DataDir       string `json:"dataDir"`
 	CheckInterval string `json:"checkInterval"` // human duration, or "disabled"
 	PublicHost    string `json:"publicHost"`
-	AuthMode      string `json:"authMode"` // "password" | "trusted header (forward auth)"
+	AuthMode      string `json:"authMode"`   // "password" | "trusted header (forward auth)"
+	UpdateMode    string `json:"updateMode"` // full | check-only | off (§3.4)
 	Version       string `json:"version"`
 }
 
@@ -59,6 +60,7 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 		CheckInterval: interval,
 		PublicHost:    a.cfg.PublicHost,
 		AuthMode:      authMode,
+		UpdateMode:    a.appUpdateMode(),
 		Version:       version,
 	})
 }
@@ -72,10 +74,23 @@ func (a *api) updateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		CheckInterval *string `json:"checkInterval"` // "off", or a Go duration >= 5m; "" reverts to env
+		UpdateMode    *string `json:"updateMode"`    // full | check-only | off (§3.4)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if body.UpdateMode != nil {
+		v := strings.TrimSpace(strings.ToLower(*body.UpdateMode))
+		if !validUpdateMode(v) {
+			writeError(w, http.StatusBadRequest, "update mode must be one of: full, check-only, off")
+			return
+		}
+		if err := a.db.SetSetting(settingAppUpdateMode, v); err != nil {
+			a.logger.Error("settings: set update mode", "err", err)
+			writeError(w, http.StatusInternalServerError, "failed to save settings")
+			return
+		}
 	}
 	if body.CheckInterval != nil {
 		v := strings.TrimSpace(strings.ToLower(*body.CheckInterval))

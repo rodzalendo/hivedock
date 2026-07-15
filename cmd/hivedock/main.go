@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -26,6 +27,14 @@ import (
 )
 
 func main() {
+	// The detached self-update helper re-invokes this same binary as
+	// `hivedock apply-update …` to run the digest-pinned recreate (HARDENING.md
+	// §3.3). It needs no config, store, or daemon of its own — only the docker
+	// CLI — so handle it before the normal server bootstrap.
+	if len(os.Args) > 1 && os.Args[1] == "apply-update" {
+		os.Exit(runApplyUpdate(os.Args[2:]))
+	}
+
 	cfg := config.Load()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
@@ -129,4 +138,29 @@ func run(cfg config.Config, logger *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	return httpServer.Shutdown(shutdownCtx)
+}
+
+// runApplyUpdate is the entry point for the detached `hivedock apply-update`
+// helper: it pulls the cosign-verified digest and recreates HiveDock's compose
+// project from those exact bytes (server.ApplyUpdate). Returns a process exit
+// code.
+func runApplyUpdate(args []string) int {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	fs := flag.NewFlagSet("apply-update", flag.ContinueOnError)
+	var o server.ApplyUpdateOpts
+	fs.StringVar(&o.Digest, "digest", "", "approved manifest digest (sha256:…) to deploy")
+	fs.StringVar(&o.ProjectDir, "project-dir", "", "compose project directory")
+	fs.StringVar(&o.ComposeFile, "compose-file", "", "compose file path")
+	fs.StringVar(&o.ImageRef, "image-ref", "", "compose image ref to retag onto the pulled digest")
+	if err := fs.Parse(args); err != nil {
+		logger.Error("apply-update: parse args", "err", err)
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	if err := server.ApplyUpdate(ctx, logger, o); err != nil {
+		logger.Error("apply-update failed", "err", err)
+		return 1
+	}
+	return 0
 }

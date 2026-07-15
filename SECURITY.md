@@ -18,7 +18,7 @@ HiveDock is pre-1.0 and ships from a single line. Security fixes land on the lat
 
 HiveDock makes **no** analytics, telemetry, or crash-reporting calls — ever. The only outbound connections are:
 
-1. **`ghcr.io`** — to check whether a newer *HiveDock* release exists (the sidebar version check and self-update). Skipped entirely for `dev`/`edge` builds; a future setting will let you turn it off.
+1. **`ghcr.io`** — to check whether a newer *HiveDock* release exists (the sidebar version check and self-update), and to fetch that release's cosign signature so it can be verified. Skipped entirely for `dev`/`edge` builds, and for the `off` / `check-only` update modes as documented. Signature verification uses a sigstore trust root baked into the image and verifies the transparency-log proof offline, so it needs no call to Rekor; cosign may occasionally refresh an expired trust root from the sigstore TUF CDN (`tuf-repo-cdn.sigstore.dev`).
 2. **Container registries you already use** — Docker Hub, GHCR, LinuxServer (lscr.io), Quay — to check your images for updates. Only the registries your stacks reference are contacted, and only for tag/digest metadata (HEAD requests where possible).
 3. **Icon CDNs** (dashboard-icons, selfh.st) — once per newly seen image to fetch its icon, which is then cached under `DATA_DIR` and served locally. Existing installs re-fetch nothing.
 
@@ -36,7 +36,8 @@ Nothing else leaves the box. If you find a connection not on this list, that's a
 - **Login brute-force damping** — failed logins are rate-limited per (username, IP) with exponential backoff (5 failures → 30 s, doubling to a 15 min cap), on top of a flat per-attempt delay and bcrypt's own cost. The unknown-username path still runs a bcrypt comparison, so timing doesn't reveal whether the account exists.
 - **Session hardening** — tokens are stored only as a SHA-256 hash (a DB read can't recover a usable cookie), rotate on each login, and expire after 7 days idle / 30 days absolute.
 - **Trusted-header (forward-auth) SSO** — optional; trust is decided by the real TCP peer against configured CIDRs, evaluated before any `X-Forwarded-For` rewriting, so the header can't be spoofed from outside the proxy network.
-- **Reads via the Docker SDK; mutations shell out to `docker compose`** with argument arrays (no shell string interpolation), each under a per-stack lock.
+- **Verified, digest-pinned self-update.** Release images are cosign-signed keyless via GitHub Actions OIDC (no long-lived signing key). Before HiveDock offers an update to itself it verifies the candidate's signature against its own release-workflow identity; if verification fails it shows an alert instead of an offer. Applying pulls the *exact verified digest* (never a tag that may have moved) and recreates the container from those bytes. A stricter-than-running downgrade guard means a stale-but-signed release can't walk an install backward. Three modes: `full` (verify + one-click apply, default), `check-only`, `off`.
+- **Reads via the Docker SDK; mutations shell out to `docker compose`** with argument arrays (no shell string interpolation — enforced by a CI grep gate over non-test Go), each under a per-stack lock.
 - **Compose files are only ever written** on an explicit editor save or the single-line image-tag rewrite in the update flow (a targeted scalar edit — never a parse-and-dump). Env-interpolated tags are surfaced, never rewritten.
 - **Same-origin WebSocket** — the `/api/ws` upgrade is rejected unless the `Origin` matches the request host or the configured `PUBLIC_HOST`, closing cross-site WebSocket hijacking.
 - **Log output is sanitized server-side** — terminal escape sequences and stray control bytes are stripped from container log lines before they reach the browser, and all dynamic strings render as text nodes (no `innerHTML`, enforced in CI).
@@ -46,8 +47,8 @@ Nothing else leaves the box. If you find a connection not on this list, that's a
 
 Being explicit beats being discovered. On the current roadmap (see `docs/HARDENING.md`):
 
-- **Self-update is not yet signature-verified.** It pulls the newest release image and recreates HiveDock's own container; cosign verification and digest-pinning of that flow are planned.
 - **No at-rest encryption** for stored settings beyond filesystem permissions.
+- **Release-pipeline trust.** Verified self-update moves the trust root from a registry password to HiveDock's GitHub Actions release workflow (keyless OIDC). A compromise of that workflow could produce a validly-signed malicious image; the tag protection, required-reviewer release environment, and SLSA provenance on each build exist to reduce that risk. SSH remains the universal fallback.
 
 > **`AUTH_DISABLED` was removed.** It disabled authentication entirely and turned a socket-holding mutator into an open proxy. The container now refuses to boot if the variable is still set. Use trusted-header (forward-auth) SSO instead: set `AUTH_TRUSTED_HEADER` + `AUTH_TRUSTED_PROXY_CIDRS` behind Authelia/authentik/Caddy. The header is honored only when the request's real TCP peer is inside a configured CIDR (evaluated before `X-Forwarded-For` rewriting), so it cannot be spoofed from outside your proxy network.
 
