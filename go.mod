@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/fsnotify/fsnotify v1.7.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/crypto v0.31.0
