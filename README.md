@@ -184,11 +184,16 @@ Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.des
 
 ## Security & privacy
 
-HiveDock holds the Docker socket, so it's honest about what that means: **socket access is root-equivalent** — run HiveDock behind your network boundary (LAN/VPN), and only expose it to the internet behind a reverse proxy that does its own auth. It ships with single-admin auth (bcrypt, CSRF-protected mutations, login rate-damping), same-origin WebSocket enforcement, server-side sanitization of container log output, a baseline CSP, and a **cosign-verified, digest-pinned self-update** (keyless-signed releases; a failed signature check surfaces an alert instead of an update).
+HiveDock holds the Docker socket, so it's honest about what that means: **socket access is root-equivalent** — run HiveDock behind your network boundary (LAN/VPN), and only expose it to the internet behind a reverse proxy that does its own auth. What it ships:
 
-**It does not phone home.** No analytics, no telemetry. The only outbound calls are: `ghcr.io` to check for a newer HiveDock release and fetch its signature to verify (transparency-log proof checked offline against a baked-in trust root), the container registries your own stacks use (for image-update checks), and icon CDNs once per new image (then cached and served locally). That's the complete list.
+- **Auth with no bypass.** Single admin (bcrypt), CSRF-protected mutations, login rate-damping, SHA-256 session storage. No default credentials — first run is gated by a token printed to the container log. Optional forward-auth SSO (trust decided by the real TCP peer, not a spoofable header).
+- **Verified, digest-pinned self-update.** Releases are cosign-signed keyless (GitHub Actions OIDC); HiveDock verifies the signature against its own release-workflow identity and deploys the exact verified digest, refusing downgrades. A failed check shows an alert, never a silent update.
+- **File trust.** Compose files stay the source of truth. The tag rewrite is byte-exact or it aborts (fuzz-tested); editor saves are optimistic-locked (no clobbering an SSH edit); machine edits show a diff before writing. Every file op is symlink-confined to `STACKS_DIR`. Optional local git audit trail.
+- **Tight browser surface.** Same-origin WebSocket, server-side log sanitization (no `innerHTML`), and a CSP with **zero external origins** (icons are proxied, SSRF-guarded).
 
-See [SECURITY.md](SECURITY.md) for the full posture, the trust model, how to report a vulnerability, and current limitations (including the `AUTH_DISABLED` escape hatch — don't use it on an untrusted network).
+**It does not phone home.** No analytics, no telemetry. The only outbound calls are: `ghcr.io` (HiveDock's own version check + signature), the registries your stacks use (image update checks), and icon CDNs once per new image (then cached locally). That's the complete list.
+
+See **[THREAT_MODEL.md](THREAT_MODEL.md)** for assets, trust boundaries, and residual risks, **[SECURITY.md](SECURITY.md)** for the mitigations and how to report a vulnerability, and **[`deploy/compose.hardened.yaml`](deploy/compose.hardened.yaml)** for a locked-down profile (cap-drop, read-only rootfs, optional socket proxy). Licensed [MIT](LICENSE).
 
 ## How it's built
 

@@ -36,7 +36,22 @@ merge (update both together, per house rules). `docs/PRD.md` non-goals still bin
 > `hivedock apply-update` helper subcommand — which retired the last `sh -c`, so
 > the §4.3 no-shell CI gate landed too. Update modes `full`/`check-only`/`off`.
 >
-> **Not yet done:** §4.1, §4.2, §4.5, §4.7, §4.8, §5, §6, and `THREAT_MODEL.md`.
+> **Landed (Phase C — hardening pass):** §4.1 lowercase name allowlist, §4.2
+> symlink-resolved path containment (`stacks.Contained`, property-tested), §4.5
+> CSP tightened to zero external origins with an SSRF-guarded server-side icon
+> proxy, §4.8 fuzz target for the rewriter + property tests. (§4.3/§4.4/§4.6
+> shipped earlier; §4.7 `.env`-plaintext is documented in `THREAT_MODEL.md`.)
+>
+> **Landed (Phase D — file trust):** §5.1 optimistic locking on editor saves
+> (409 + reconcile), §5.2 diff preview + optimistic lock for the update rewrite,
+> §5.3 verified byte-exactness (reconstruct-and-compare + re-parse, fuzzed), §5.4
+> opt-in local git audit trail (snapshot-before + commit-after, no remotes).
+>
+> **Landed (§7 disclosure):** `THREAT_MODEL.md`, `deploy/compose.hardened.yaml`
+> (+ socket-proxy allowlist), MIT `LICENSE`, dependabot, staticcheck + advisory
+> govulncheck in CI.
+>
+> **Not yet done:** §6 (ops resilience — Phase E).
 
 ## 1. Scope
 
@@ -368,8 +383,8 @@ subsystem being rebuilt. `/api/settings` is explicitly excluded.
 |---|---|---|---|
 | **A — footgun & docs** | §2 complete (removal + boot refusal, trusted-header auth, first-run token, rate limiting, session hardening); `SECURITY.md`; `THREAT_MODEL.md`; repo hygiene | Boot with `AUTH_DISABLED` fails with the message; setup unreachable without log token; fail2ban filter tested against real log output; forward-auth verified behind Authelia on PCT 102 | 1 weekend |
 | **B — supply chain** ✅ | §3 complete: cosign in CI, verify-in-app, digest-pinned helper flow, downgrade guard, modes, outbound inventory; multi-arch builds; §4.3 no-shell gate | A tampered/unsigned tag is refused and surfaces the alert state; end-to-end self-update on PCT 102 lands on the exact approved digest; arm64 image boots | 1 weekend |
-| **C — hardening pass** | §4 complete with tests; README security section | Traversal/symlink property tests green; WS upgrade rejects foreign Origin; CSP has zero external origins; grep gates wired into CI and failing on planted violations | 1 weekend |
-| **D — file trust** | §5 complete; golden-file + fuzz corpora linked from README with a "PR tags that fool it" invitation | Concurrent-edit save returns 409; rewriter fuzzer runs clean; git opt-in produces the two-commit pattern; a deliberately imperfect rewrite aborts | 1–2 weekends |
+| **C — hardening pass** ✅ | §4 complete with tests; README security section | Traversal/symlink property tests green; WS upgrade rejects foreign Origin; CSP has zero external origins; grep gates wired into CI and failing on planted violations | 1 weekend |
+| **D — file trust** ✅ | §5 complete; fuzz corpus for the rewriter | Concurrent-edit save returns 409; rewriter fuzzer runs clean; git opt-in produces the snapshot+commit pattern; a deliberately imperfect rewrite aborts | 1–2 weekends |
 | **E — ops** | §6 complete; hardened compose + proxy doc | 30-stack sweep stays under per-registry limits with jitter visible in logs; parity mismatch boots read-only with banner; read-only token rejects non-allowlisted routes; podman banner fires | 1 weekend |
 
 Order rationale: A kills the top thread comments and unblocks everything. B must
