@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -43,6 +44,9 @@ func SetImageTag(content []byte, service, newTag string) ([]byte, error) {
 		return nil, err
 	}
 	old := imgNode.Value
+	if old == "" {
+		return nil, ErrNoImage
+	}
 	if strings.Contains(old, "${") {
 		return nil, ErrEnvManaged
 	}
@@ -54,7 +58,78 @@ func SetImageTag(content []byte, service, newTag string) ([]byte, error) {
 	if newRef == old {
 		return content, nil
 	}
-	return replaceOnLine(content, imgNode.Line, old, newRef)
+
+	off, err := valueOffset(content, imgNode.Line, old)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]byte, 0, len(content)-len(old)+len(newRef))
+	result = append(result, content[:off]...)
+	result = append(result, newRef...)
+	result = append(result, content[off+len(old):]...)
+
+	// §5.3: prove the write touched exactly the intended image scalar and nothing
+	// else. Any deviation aborts — a broken paper trail stops the press.
+	if err := verifyExactRewrite(content, result, off, old, newRef, service, imgNode.Line); err != nil {
+		return nil, fmt.Errorf("refusing compose rewrite: %w", err)
+	}
+	return result, nil
+}
+
+// valueOffset returns the absolute byte offset of old's first occurrence on the
+// given 1-based line. SplitAfter keeps line terminators, so the running sum is an
+// exact byte offset (correct for both "\n" and "\r\n").
+func valueOffset(content []byte, line int, old string) (int, error) {
+	lines := strings.SplitAfter(string(content), "\n")
+	if line < 1 || line > len(lines) {
+		return 0, fmt.Errorf("image value line %d out of range", line)
+	}
+	off := 0
+	for i := 0; i < line-1; i++ {
+		off += len(lines[i])
+	}
+	at := strings.Index(lines[line-1], old)
+	if at < 0 {
+		return 0, fmt.Errorf("could not locate image value %q on line %d", old, line)
+	}
+	return off + at, nil
+}
+
+// verifyExactRewrite enforces the byte-exactness invariant (§5.3): result must be
+// content with ONLY the bytes [off, off+len(old)) replaced by newRef, and a
+// re-parse must confirm that the changed scalar is the target service's image
+// (still on its original line) — not some other same-line match. Either check
+// failing aborts the write.
+func verifyExactRewrite(original, result []byte, off int, old, newRef, service string, line int) error {
+	if off < 0 || off+len(old) > len(original) {
+		return fmt.Errorf("image span [%d,%d) out of range", off, off+len(old))
+	}
+	if !bytes.Equal(original[off:off+len(old)], []byte(old)) {
+		return fmt.Errorf("image span does not hold the expected value")
+	}
+	expected := make([]byte, 0, len(original)-len(old)+len(newRef))
+	expected = append(expected, original[:off]...)
+	expected = append(expected, newRef...)
+	expected = append(expected, original[off+len(old):]...)
+	if !bytes.Equal(result, expected) {
+		return fmt.Errorf("rewrite changed bytes outside the image tag span")
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(result, &doc); err != nil {
+		return fmt.Errorf("rewrite produced unparseable YAML: %w", err)
+	}
+	img, err := findImageNode(&doc, service)
+	if err != nil {
+		return fmt.Errorf("rewrite lost the service image: %w", err)
+	}
+	if img.Value != newRef {
+		return fmt.Errorf("service image is %q after rewrite, want %q", img.Value, newRef)
+	}
+	if img.Line != line {
+		return fmt.Errorf("service image moved from line %d to %d", line, img.Line)
+	}
+	return nil
 }
 
 // findImageNode walks services.<service>.image to the scalar value node.
@@ -98,20 +173,4 @@ func replaceTag(image, newTag string) string {
 		return image[:i+1] + newTag
 	}
 	return image + ":" + newTag
-}
-
-// replaceOnLine replaces the first occurrence of old with newRef on the given
-// 1-based line, leaving all other lines (and the line's quoting/comments) intact.
-func replaceOnLine(content []byte, line int, old, newRef string) ([]byte, error) {
-	lines := strings.Split(string(content), "\n")
-	idx := line - 1
-	if idx < 0 || idx >= len(lines) {
-		return nil, fmt.Errorf("image value line %d out of range", line)
-	}
-	at := strings.Index(lines[idx], old)
-	if at < 0 {
-		return nil, fmt.Errorf("could not locate image value %q on line %d", old, line)
-	}
-	lines[idx] = lines[idx][:at] + newRef + lines[idx][at+len(old):]
-	return []byte(strings.Join(lines, "\n")), nil
 }
