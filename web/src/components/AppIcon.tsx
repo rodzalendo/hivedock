@@ -74,8 +74,11 @@ export default function AppIcon({ entry, size = 40 }: { entry: HomeEntry; size?:
 function iconSources(entry: HomeEntry): string[] {
   const out: string[] = [];
   if (entry.icon && entry.icon.trim() !== "") {
-    // Explicit icon: full URL used directly; otherwise treat as a slug.
-    if (/^https?:\/\//.test(entry.icon)) out.push(entry.icon);
+    // Explicit icon. A full URL is proxied through HiveDock (fetched + cached
+    // server-side) so the browser only ever loads icons from 'self' — the CSP
+    // allows no external image origins. Otherwise it's a dashboard-icons slug.
+    if (/^https?:\/\//.test(entry.icon))
+      out.push(`/api/icons/remote?url=${encodeURIComponent(entry.icon)}`);
     else out.push(`/api/icons/${encodeURIComponent(stripExt(entry.icon))}`);
   }
   // Hivedock has no dashboard-icons entry — serve its own bundled logo.

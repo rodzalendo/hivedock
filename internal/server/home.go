@@ -258,6 +258,25 @@ func (a *api) icon(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// remoteIcon proxies a user-set custom icon URL through HiveDock — fetched
+// server-side (SSRF-guarded) and cached — so the browser only ever loads icons
+// from 'self' and the CSP needs no external image origins (§4.5).
+func (a *api) remoteIcon(w http.ResponseWriter, r *http.Request) {
+	rawURL := r.URL.Query().Get("url")
+	if rawURL == "" {
+		http.NotFound(w, r)
+		return
+	}
+	data, ct, ok := a.icons.RemoteIcon(r.Context(), rawURL)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(data)
+}
+
 func (a *api) publicHost(r *http.Request) string {
 	if a.cfg.PublicHost != "" {
 		return a.cfg.PublicHost

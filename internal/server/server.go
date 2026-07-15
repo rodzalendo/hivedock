@@ -115,6 +115,7 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Put("/home/{stack}/{service}/icon", api.setIcon)
 			r.Put("/home/{stack}/{service}/name", api.setName)
 			r.Put("/home/{stack}/{service}/url", api.setUrl)
+			r.Get("/icons/remote", api.remoteIcon)
 			r.Get("/icons/{slug}", api.icon)
 		})
 	})
@@ -231,10 +232,13 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		// img-src allows https + data for user-set custom icon URLs; connect-src
-		// 'self' covers the API + WebSocket (ws: is same-origin via 'self').
+		// Zero external origins (§4.5): the SPA is embedded and every icon —
+		// including user-set custom URLs — is proxied and served from 'self', so
+		// img-src needs only 'self' + data:. style-src keeps 'unsafe-inline' for
+		// Tailwind's generated CSS; no inline scripts are used. connect-src 'self'
+		// covers the API + same-origin WebSocket.
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; "+
+			"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "+
 				"script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'")
 		next.ServeHTTP(w, r)
 	})
