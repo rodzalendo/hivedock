@@ -75,11 +75,14 @@ Daemon down → managed stacks still show, status `unknown`.
 ### 2.2 SQLite scope (app state only)
 
 `settings` (kv: check interval, home layout blob, admin credentials, session
-tokens), `service_prefs` (`stack,service → {hidden, icon, display_name, url}` —
-the per-card overrides), `image_checks` (cached update-check results) and
-`image_ignores` (per-image pins). **Never** stack definitions. Migrations live
-in `store/migrations/*.sql`, applied in filename order and tracked in
-`schema_migrations`.
+tokens, plus the hardening keys — `app_update_mode`, `git_autocommit`,
+`registry_config` JSON, and the SHA-256 of the read-only API token), `service_prefs`
+(`stack,service → {hidden, icon, display_name, url}` — the per-card overrides),
+`image_checks` (cached update-check results) and `image_ignores` (per-image pins).
+Secrets in `settings` (session tokens, the API-token and registry passwords) are
+protected by `DATA_DIR` file permissions, not at-rest encryption (THREAT_MODEL.md).
+**Never** stack definitions. Migrations live in `store/migrations/*.sql`, applied
+in filename order and tracked in `schema_migrations`.
 
 ### 2.3 Real-time
 
@@ -271,16 +274,52 @@ The SPA uses the URL **hash** as its router (`#/stacks`, `#/updates`,
 so refresh and back/forward preserve the view. No server-side route config
 needed; the `NotFound` SPA fallback serves `index.html`.
 
-## 6. Layout
+## 6. Security hardening (Phases A–E)
+
+The full design + rationale is in `docs/HARDENING.md`; this is the architectural
+map of what shipped and where. Trust model and residual risks: `THREAT_MODEL.md`.
+
+- **Auth (A).** Single admin (bcrypt), HttpOnly session cookie stored as a SHA-256
+  hash, double-submit CSRF on unsafe methods, per-(user,ip) login backoff. First
+  run mints a one-time setup token. Optional trusted-header SSO decides trust from
+  the real TCP peer captured by `capturePeer` *before* chi's RealIP rewrites
+  `X-Forwarded-For`. `AUTH_DISABLED` is gone (boot-refuses). `server/auth.go`,
+  `server/ratelimit.go`.
+- **Verified self-update (B).** See §5a. `server/selfupdate.go` + `release.yml`.
+- **Input/output (C).** `stacks.Contained` symlink-resolves every file target and
+  confines it to `STACKS_DIR`; stack names are a lowercase allowlist. The CSP has
+  zero external origins — custom icon URLs are fetched server-side by
+  `discovery.RemoteIcon` behind a dial-time SSRF guard (`dialGuard`/`isPublicIP`)
+  and served from `/api/icons/remote`. Log lines are escape-sanitized; a CI grep
+  gate bans `sh -c` in non-test Go and `dangerouslySetInnerHTML`.
+- **File trust (D).** Editor load returns the file's SHA-256; save must present it
+  or gets a 409 with the on-disk version (`checkOptimisticLock`). The update
+  rewrite is two-phase (unified-diff preview → confirm) and byte-exact: after the
+  in-memory edit, `compose.verifyExactRewrite` reconstructs-and-compares + re-parses
+  to prove only the image scalar changed, or aborts (fuzzed by `FuzzSetImageTag`).
+  Opt-in `stacks` git helpers commit a snapshot-before + commit-after around each
+  write (local only, no remotes).
+- **Ops (E).** The shared `registry.Client` takes a `ConfigResolver` reading
+  per-host credentials (Basic-auth token exchange) and TLS trust (CA bundle /
+  insecure → cached per-host client) from `registry_config`; scheduled sweeps
+  jitter their start. On boot, `server/systemcheck.go` inspects HiveDock's own
+  container: a `STACKS_DIR` bind-parity mismatch drops it into read-only mode
+  (`enforceReadOnly` refuses unsafe methods, banner via `/api/health`), and
+  podman/rootless are flagged. A hashed, revocable read-only API token
+  (`server/apitoken.go`) authorizes exactly three GET routes for monitoring tools.
+
+## 7. Layout
 
 ```
 cmd/hivedock/         entrypoint
 internal/
   config/             env config
-  docker/             read-only Docker SDK wrapper (list, events, logs)
-  stacks/             scan + merge + classify + drift (truth model)
-  compose/            read-only `docker compose` subcommands (config --hash);
-                      Phase 3 adds the mutating runner
+  docker/             Docker SDK wrapper (list, events, logs, self-inspect +
+                      runtime detection for the boot self-check)
+  stacks/             scan + merge + classify + drift (truth model); path
+                      containment + opt-in git audit trail
+  compose/            `docker compose` runner + validate + the byte-exact
+                      image-tag rewriter
   events/             pub/sub hub (debounced)
   watch/              fsnotify + docker events + rescan → hub
   hoststats/          /proc sampler
