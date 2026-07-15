@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +17,30 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Same-origin is enforced by default (Origin must match Host). vite proxies
-	// /api to the Go server in dev, so no override is needed.
+}
+
+// checkWSOrigin gates the WebSocket upgrade to same-origin requests, closing
+// cross-site WebSocket hijacking (the classic dashboard bug): a malicious page
+// in the victim's browser can't open an authenticated socket to Hivedock. A
+// missing Origin (non-browser clients: curl, native apps) carries no ambient
+// cookies and so no CSRF risk — allowed. When present, the Origin host must
+// match the request Host or the configured PUBLIC_HOST.
+func (a *api) checkWSOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+	if a.cfg.PublicHost != "" && strings.EqualFold(u.Host, a.cfg.PublicHost) {
+		return true
+	}
+	return false
 }
 
 const (
@@ -47,7 +71,10 @@ type wsSession struct {
 
 // websocket upgrades the connection and runs the session until disconnect.
 func (a *api) websocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	// Per-request copy of the shared upgrader so CheckOrigin can consult cfg.
+	up := upgrader
+	up.CheckOrigin = a.checkWSOrigin
+	conn, err := up.Upgrade(w, r, nil)
 	if err != nil {
 		a.logger.Warn("ws upgrade failed", "err", err, "remote", r.RemoteAddr)
 		return

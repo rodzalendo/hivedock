@@ -173,6 +173,14 @@ services:
 
 Existing `homepage.*` labels (`homepage.name`, `.group`, `.icon`, `.href`, `.description`) are read as-is, so a labeled stack keeps its identity with zero migration work.
 
+## Security & privacy
+
+HiveDock holds the Docker socket, so it's honest about what that means: **socket access is root-equivalent** — run HiveDock behind your network boundary (LAN/VPN), and only expose it to the internet behind a reverse proxy that does its own auth. It ships with single-admin auth (bcrypt, CSRF-protected mutations, login rate-damping), same-origin WebSocket enforcement, server-side sanitization of container log output, and a baseline CSP.
+
+**It does not phone home.** No analytics, no telemetry. The only outbound calls are: `ghcr.io` to check for a newer HiveDock release, the container registries your own stacks use (for image-update checks), and icon CDNs once per new image (then cached and served locally). That's the complete list.
+
+See [SECURITY.md](SECURITY.md) for the full posture, the trust model, how to report a vulnerability, and current limitations (including the `AUTH_DISABLED` escape hatch — don't use it on an untrusted network).
+
 ## How it's built
 
 A Go backend (chi router, Docker SDK for reads, `docker compose` subprocess for mutations) with an embedded React + Tailwind frontend, compiled into one static binary in a multi-stage Docker build. SQLite (pure-Go driver, no CGO) stores only app state: settings, UI preferences, cached update results. Stack definitions live exclusively in your compose files. Multi-arch images are published to GHCR on every tagged release.

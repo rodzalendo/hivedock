@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/docker/docker/pkg/stdcopy"
@@ -120,7 +121,7 @@ func (s *wsSession) streamContainer(ctx context.Context, stack, service, contain
 
 	emit := func(stream, line string) {
 		s.send(events.Message{Type: "logs:line", Payload: logLine{
-			Stack: stack, Service: service, Stream: stream, Line: line,
+			Stack: stack, Service: service, Stream: stream, Line: sanitizeLogLine(line),
 		}})
 	}
 
@@ -136,6 +137,60 @@ func (s *wsSession) streamContainer(ctx context.Context, stack, service, contain
 	_, _ = stdcopy.StdCopy(stdoutW, stderrW, rc)
 	stdoutW.flush()
 	stderrW.flush()
+}
+
+// sanitizeLogLine strips terminal escape sequences and stray control bytes from
+// a container log line. Container output is attacker-controlled the moment any
+// container on the host is compromised; without this, escape sequences (cursor
+// moves, OSC title/clipboard injection, SGR color) would pass straight through
+// to the browser log view. The UI renders text nodes and does its own severity
+// coloring, so dropping color codes too is fine — we keep printable text and
+// tabs, nothing else.
+func sanitizeLogLine(s string) string {
+	// Fast path: no ESC and no stray control bytes → return as-is.
+	if strings.IndexFunc(s, func(r rune) bool {
+		return r == 0x1b || (r < 0x20 && r != '\t') || r == 0x7f
+	}) < 0 {
+		return s
+	}
+	runes := []rune(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == 0x1b { // ESC — start of an escape sequence
+			if i+1 >= len(runes) {
+				break
+			}
+			switch runes[i+1] {
+			case '[': // CSI: params until a final byte in 0x40–0x7E
+				i += 2
+				for i < len(runes) && !(runes[i] >= 0x40 && runes[i] <= 0x7e) {
+					i++
+				}
+			case ']': // OSC: until BEL or ST (ESC \)
+				i += 2
+				for i < len(runes) {
+					if runes[i] == 0x07 {
+						break
+					}
+					if runes[i] == 0x1b && i+1 < len(runes) && runes[i+1] == '\\' {
+						i++
+						break
+					}
+					i++
+				}
+			default: // two-byte escape (e.g. ESC c): drop both bytes
+				i++
+			}
+			continue
+		}
+		if (r < 0x20 && r != '\t') || r == 0x7f {
+			continue // drop stray control bytes, keep tab
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // scanLines reads newline-delimited text and calls fn per line.

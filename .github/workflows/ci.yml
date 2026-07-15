@@ -23,6 +23,20 @@ jobs:
       - name: go test
         run: go test ./internal/... ./cmd/...
 
+  gates:
+    name: Security grep gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Untrusted strings (container logs, hivedock.description labels) must
+      # never reach innerHTML. All dynamic content renders as React text nodes.
+      - name: No dangerouslySetInnerHTML
+        run: |
+          if grep -rn "dangerouslySetInnerHTML" web/src; then
+            echo "::error::dangerouslySetInnerHTML is banned — render as text nodes"
+            exit 1
+          fi
+
   frontend:
     name: Web typecheck + test + lint
     runs-on: ubuntu-latest
