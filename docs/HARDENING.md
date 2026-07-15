@@ -51,7 +51,14 @@ merge (update both together, per house rules). `docs/PRD.md` non-goals still bin
 > (+ socket-proxy allowlist), MIT `LICENSE`, dependabot, staticcheck + advisory
 > govulncheck in CI.
 >
-> **Not yet done:** §6 (ops resilience — Phase E).
+> **Landed (Phase E — ops resilience):** §6.1 per-registry credentials + sweep
+> jitter (Basic-auth token exchange, resolver reads the store live), §6.2
+> per-registry TLS trust (CA bundle path + insecure toggle, per-host client),
+> §6.3 invariant-4 startup self-check (STACKS_DIR bind parity → read-only mode +
+> banner), §6.4 podman/rootless detection banner, §6.5 read-only API token
+> (hashed, revocable, three-GET allowlist).
+>
+> **All five phases (A–E) are complete.** Remaining is polish, not planned scope.
 
 ## 1. Scope
 
@@ -385,7 +392,7 @@ subsystem being rebuilt. `/api/settings` is explicitly excluded.
 | **B — supply chain** ✅ | §3 complete: cosign in CI, verify-in-app, digest-pinned helper flow, downgrade guard, modes, outbound inventory; multi-arch builds; §4.3 no-shell gate | A tampered/unsigned tag is refused and surfaces the alert state; end-to-end self-update on PCT 102 lands on the exact approved digest; arm64 image boots | 1 weekend |
 | **C — hardening pass** ✅ | §4 complete with tests; README security section | Traversal/symlink property tests green; WS upgrade rejects foreign Origin; CSP has zero external origins; grep gates wired into CI and failing on planted violations | 1 weekend |
 | **D — file trust** ✅ | §5 complete; fuzz corpus for the rewriter | Concurrent-edit save returns 409; rewriter fuzzer runs clean; git opt-in produces the snapshot+commit pattern; a deliberately imperfect rewrite aborts | 1–2 weekends |
-| **E — ops** | §6 complete; hardened compose + proxy doc | 30-stack sweep stays under per-registry limits with jitter visible in logs; parity mismatch boots read-only with banner; read-only token rejects non-allowlisted routes; podman banner fires | 1 weekend |
+| **E — ops** ✅ | §6 complete; hardened compose + proxy doc | 30-stack sweep stays under per-registry limits with jitter visible in logs; parity mismatch boots read-only with banner; read-only token rejects non-allowlisted routes; podman banner fires | 1 weekend |
 
 Order rationale: A kills the top thread comments and unblocks everything. B must
 precede the announcement because the post claims it. C and D are what the CVE
