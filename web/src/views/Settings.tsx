@@ -510,31 +510,41 @@ function RegistriesSection() {
         </ul>
       )}
 
+      {/* autoComplete is set so the browser doesn't offer the site login here:
+          these are registry credentials, not a HiveDock sign-in. "new-password"
+          on the secret field suppresses saved-password autofill and the
+          "save password?" prompt. */}
       <div className="grid gap-2 sm:grid-cols-2">
         <input
           className={inputCls}
           placeholder="registry host (registry.example.com)"
           value={host}
           onChange={(e) => setHost(e.target.value)}
+          autoComplete="off"
         />
         <input
           className={inputCls}
+          name="registry-username"
           placeholder="username (optional)"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          autoComplete="off"
         />
         <input
           className={inputCls}
+          name="registry-secret"
           type="password"
           placeholder="password / token (optional)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
         />
         <input
           className={inputCls}
           placeholder="CA bundle path (optional)"
           value={caBundlePath}
           onChange={(e) => setCaBundlePath(e.target.value)}
+          autoComplete="off"
         />
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-3">
