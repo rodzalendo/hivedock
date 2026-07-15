@@ -166,9 +166,18 @@ can differ from what was checked. New flow:
 Failure modes: signature invalid → no offer, alert shown. Pull fails → old
 container keeps running, error reported. Recreate fails → compose's own behavior
 applies and the error streams to the UI; SSH remains the universal fallback,
-stated in the threat model. If the Hivedock stack pins a version tag (the
-recommended setup), the normal update path rewrites the `image:` line first via
-the standard comment-preserving edit, then the helper recreates.
+stated in the threat model.
+
+**Tag hygiene (as implemented).** Step 4 retags the verified bytes onto whatever
+`image:` ref the Hivedock stack names, so self-update targets a *mutable* tag —
+track `ghcr.io/<owner>/hivedock:latest`, which is what the shipped compose
+(`deploy/pct101.compose.yaml`, README example) uses. If the stack instead pins an
+exact version (`…:1.0.0`), the running container does get the verified new bytes,
+but the local tag then diverges from the registry, so a later manual
+`docker compose pull` could revert it. Rewriting a pinned `image:` line to the new
+version through the comment-preserving editor (so the file matches what's running)
+is a planned enhancement tracked with §5 file-trust; until then, use `:latest` for
+Hivedock's own image.
 
 ### 3.4 Modes
 

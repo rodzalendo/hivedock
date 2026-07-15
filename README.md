@@ -130,7 +130,7 @@ services:
 
 Open `http://<your-host>:5001`, create the admin account on the first-run screen, and your existing stacks appear immediately. From then on you can update HiveDock itself with one click from the sidebar.
 
-> **Image tags:** `:latest` tracks stable releases, `:X.Y.Z` pins one, `:edge` follows every push to `main`. The sidebar self-update needs a release build (`:latest` or a version tag).
+> **Image tags:** `:latest` tracks stable releases, `:X.Y.Z` pins one, `:edge` follows every push to `main`. Point HiveDock's *own* compose at **`:latest`** (as the example above does) so the one-click self-update stays clean — it deploys the verified new image in place, and `:latest` keeps the tag and the registry in sync. A pinned `:X.Y.Z` still updates, but you'd re-pin the tag by hand afterwards.
 
 ## Configuration
 

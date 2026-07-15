@@ -54,8 +54,9 @@ export default function HostStrip() {
   );
 }
 
-// Meter reserves a fixed, right-aligned width for its value so the row never
-// reflows as numbers change width (7% → 100%, 3.8 GB → 11.4 GB).
+// Meter keeps its value hugging the bar (left-aligned) while reserving a
+// minimum width, so number-width changes (7% → 100%, 3.8 GB → 11.4 GB) are
+// absorbed by the slack on the right and following meters never reflow.
 function Meter({
   label,
   pct,
@@ -77,7 +78,7 @@ function Meter({
         <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
       <span
-        className="inline-block text-right tabular-nums text-zinc-300"
+        className="inline-block text-left tabular-nums text-zinc-300"
         style={{ minWidth: valueMinW }}
       >
         {text}
