@@ -2,10 +2,14 @@ package registry
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,7 +24,21 @@ const acceptManifests = "application/vnd.oci.image.index.v1+json, " +
 	"application/vnd.oci.image.manifest.v1+json, " +
 	"application/vnd.docker.distribution.manifest.v2+json"
 
-// Client talks to Docker Registry v2 APIs with anonymous bearer-token auth. It
+// HostConfig is the optional per-registry configuration a caller can supply:
+// credentials for private registries (§6.1) and TLS trust for self-signed
+// homelab registries (§6.2). The zero value means anonymous + strict TLS.
+type HostConfig struct {
+	Username     string
+	Password     string
+	CABundlePath string // extra CA cert(s) to trust for this host
+	Insecure     bool   // skip TLS verification for this host (homelab escape hatch)
+}
+
+// ConfigResolver returns the HostConfig for a registry host ("" fields = none).
+type ConfigResolver func(host string) HostConfig
+
+// Client talks to Docker Registry v2 APIs. Anonymous bearer-token auth by
+// default, or per-registry credentials + TLS trust via a ConfigResolver. It
 // caches per-repository tokens, limits concurrency per registry host, and backs
 // off on 429/5xx (Docker Hub rate limits are real — see PLAN risk register).
 type Client struct {
@@ -28,10 +46,54 @@ type Client struct {
 	perHost     int           // max concurrent requests per registry host
 	maxRetry    int           // retry attempts on 429/5xx/network error
 	baseBackoff time.Duration // initial backoff (doubles each retry)
+	resolve     ConfigResolver
 
-	mu     sync.Mutex
-	tokens map[string]string        // "host|repo" -> bearer token
-	sems   map[string]chan struct{} // host -> concurrency semaphore
+	mu          sync.Mutex
+	tokens      map[string]string        // "host|repo" -> bearer token
+	sems        map[string]chan struct{} // host -> concurrency semaphore
+	hostClients map[string]*http.Client  // host -> TLS-configured client (per §6.2)
+}
+
+// SetConfigResolver installs a per-registry credential/TLS resolver. Safe to call
+// once at construction, before use.
+func (c *Client) SetConfigResolver(r ConfigResolver) { c.resolve = r }
+
+// hostConfig returns the resolved config for host (zero value if no resolver).
+func (c *Client) hostConfig(host string) HostConfig {
+	if c.resolve == nil {
+		return HostConfig{}
+	}
+	return c.resolve(host)
+}
+
+// clientForHost returns the http.Client to use for host — the default one unless
+// the host has custom TLS trust (a CA bundle or the insecure toggle), in which
+// case a dedicated client is built and cached.
+func (c *Client) clientForHost(host string) *http.Client {
+	cfg := c.hostConfig(host)
+	if cfg.CABundlePath == "" && !cfg.Insecure {
+		return c.http
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if hc, ok := c.hostClients[host]; ok {
+		return hc
+	}
+	tlsCfg := &tls.Config{InsecureSkipVerify: cfg.Insecure} //nolint:gosec // opt-in per-host homelab escape hatch (§6.2)
+	if cfg.CABundlePath != "" {
+		if pem, err := os.ReadFile(cfg.CABundlePath); err == nil {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(pem) {
+				tlsCfg.RootCAs = pool
+			}
+		}
+	}
+	hc := &http.Client{
+		Timeout:   c.http.Timeout,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+	c.hostClients[host] = hc
+	return hc
 }
 
 // NewClient builds a Client. Pass nil to use a default http.Client; pass a
@@ -47,6 +109,7 @@ func NewClient(hc *http.Client) *Client {
 		baseBackoff: 500 * time.Millisecond,
 		tokens:      map[string]string{},
 		sems:        map[string]chan struct{}{},
+		hostClients: map[string]*http.Client{},
 	}
 }
 
@@ -192,8 +255,13 @@ func (c *Client) Tags(ctx context.Context, ref Ref) ([]string, error) {
 // token, caches it, and retries once.
 func (c *Client) doAuthed(ctx context.Context, method string, ref Ref, reqURL, accept string) (*http.Response, error) {
 	scopeKey := ref.Registry + "|" + ref.Repo
+	hc := c.clientForHost(ref.Registry)
 
-	resp, err := c.attempt(ctx, method, ref.Registry, reqURL, accept, c.getToken(scopeKey))
+	authHeader := ""
+	if tok := c.getToken(scopeKey); tok != "" {
+		authHeader = "Bearer " + tok
+	}
+	resp, err := c.attempt(ctx, method, ref.Registry, reqURL, accept, authHeader, hc)
 	if err != nil {
 		return nil, err
 	}
@@ -206,17 +274,18 @@ func (c *Client) doAuthed(ctx context.Context, method string, ref Ref, reqURL, a
 	if ch == nil {
 		return nil, fmt.Errorf("registry %s returned 401 without a bearer challenge", ref.Registry)
 	}
-	token, err := c.fetchToken(ctx, ch)
+	token, err := c.fetchToken(ctx, ch, ref, hc)
 	if err != nil {
 		return nil, err
 	}
 	c.setToken(scopeKey, token)
-	return c.attempt(ctx, method, ref.Registry, reqURL, accept, token)
+	return c.attempt(ctx, method, ref.Registry, reqURL, accept, "Bearer "+token, hc)
 }
 
-// attempt sends one request (with per-host concurrency), retrying on 429/5xx and
-// network errors with exponential backoff (honoring Retry-After on 429).
-func (c *Client) attempt(ctx context.Context, method, host, reqURL, accept, token string) (*http.Response, error) {
+// attempt sends one request (with per-host concurrency) using hc, retrying on
+// 429/5xx and network errors with exponential backoff (honoring Retry-After on
+// 429). authHeader, when non-empty, is the full Authorization header value.
+func (c *Client) attempt(ctx context.Context, method, host, reqURL, accept, authHeader string, hc *http.Client) (*http.Response, error) {
 	backoff := c.baseBackoff
 	var lastErr error
 
@@ -230,10 +299,10 @@ func (c *Client) attempt(ctx context.Context, method, host, reqURL, accept, toke
 		if accept != "" {
 			req.Header.Set("Accept", accept)
 		}
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
 		}
-		resp, err := c.http.Do(req)
+		resp, err := hc.Do(req)
 		release()
 
 		switch {
@@ -272,8 +341,11 @@ func (c *Client) attempt(ctx context.Context, method, host, reqURL, accept, toke
 	return nil, fmt.Errorf("request to %s failed after %d attempts: %w", host, c.maxRetry+1, lastErr)
 }
 
-// fetchToken performs the anonymous OAuth2 token exchange for a Bearer challenge.
-func (c *Client) fetchToken(ctx context.Context, ch *challenge) (string, error) {
+// fetchToken performs the OAuth2 token exchange for a Bearer challenge. When the
+// registry (ref.Registry) has configured credentials, it authenticates the token
+// request with HTTP Basic — the standard way to obtain a scoped token for a
+// private repo (§6.1). Otherwise it's the anonymous exchange.
+func (c *Client) fetchToken(ctx context.Context, ch *challenge, ref Ref, hc *http.Client) (string, error) {
 	u, err := url.Parse(ch.realm)
 	if err != nil {
 		return "", fmt.Errorf("bad token realm %q: %w", ch.realm, err)
@@ -287,7 +359,11 @@ func (c *Client) fetchToken(ctx context.Context, ch *challenge) (string, error) 
 	}
 	u.RawQuery = q.Encode()
 
-	resp, err := c.attempt(ctx, http.MethodGet, u.Host, u.String(), "application/json", "")
+	basic := ""
+	if cfg := c.hostConfig(ref.Registry); cfg.Username != "" || cfg.Password != "" {
+		basic = "Basic " + base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password))
+	}
+	resp, err := c.attempt(ctx, http.MethodGet, u.Host, u.String(), "application/json", basic, hc)
 	if err != nil {
 		return "", err
 	}

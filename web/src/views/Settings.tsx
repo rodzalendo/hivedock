@@ -7,7 +7,11 @@ import {
   initGitRepo,
   generateApiToken,
   revokeApiToken,
+  fetchRegistries,
+  saveRegistry,
+  deleteRegistry,
   type Settings as SettingsData,
+  type RegistryConfig,
   type UpdateMode,
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
@@ -41,6 +45,8 @@ export default function Settings() {
       <GitSection data={data} onSaved={refetch} />
 
       <ApiTokenSection tokenSet={data.apiTokenSet} onChanged={refetch} />
+
+      <RegistriesSection />
 
       <PruneSection />
 
@@ -418,6 +424,170 @@ function ApiTokenSection({
       )}
       {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}
     </section>
+  );
+}
+
+// RegistriesSection manages per-registry credentials (§6.1) and TLS trust (§6.2)
+// for private / self-signed registries. Registries not listed here stay
+// anonymous with strict TLS.
+const inputCls =
+  "rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-accent-500";
+
+function RegistriesSection() {
+  const { data, refetch } = useQuery({
+    queryKey: ["registries"],
+    queryFn: fetchRegistries,
+  });
+  const registries = data ?? [];
+  const [host, setHost] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [caBundlePath, setCaBundlePath] = useState("");
+  const [insecure, setInsecure] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function onAdd() {
+    if (!host.trim()) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await saveRegistry({
+        host: host.trim(),
+        username: username.trim() || undefined,
+        password: password || undefined,
+        caBundlePath: caBundlePath.trim() || undefined,
+        insecure,
+      });
+      setHost("");
+      setUsername("");
+      setPassword("");
+      setCaBundlePath("");
+      setInsecure(false);
+      refetch();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRemove(h: string) {
+    setBusy(true);
+    setNote(null);
+    try {
+      await deleteRegistry(h);
+      refetch();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to remove.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        Private registries
+        <HelpTip>
+          Credentials for private registries and TLS trust for self-signed ones.
+          Only registries listed here get credentials — everything else stays
+          anonymous with strict TLS. Passwords are stored under DATA_DIR (not
+          encrypted at rest) and never shown again.
+        </HelpTip>
+      </h3>
+
+      {registries.length > 0 && (
+        <ul className="mb-3 space-y-1.5">
+          {registries.map((r) => (
+            <RegistryRow
+              key={r.host}
+              r={r}
+              disabled={busy}
+              onRemove={() => void onRemove(r.host)}
+            />
+          ))}
+        </ul>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          className={inputCls}
+          placeholder="registry host (registry.example.com)"
+          value={host}
+          onChange={(e) => setHost(e.target.value)}
+        />
+        <input
+          className={inputCls}
+          placeholder="username (optional)"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+        <input
+          className={inputCls}
+          type="password"
+          placeholder="password / token (optional)"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <input
+          className={inputCls}
+          placeholder="CA bundle path (optional)"
+          value={caBundlePath}
+          onChange={(e) => setCaBundlePath(e.target.value)}
+        />
+      </div>
+      <div className="mt-2.5 flex flex-wrap items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-zinc-400">
+          <input
+            type="checkbox"
+            checked={insecure}
+            onChange={(e) => setInsecure(e.target.checked)}
+            className="accent-accent-600"
+          />
+          Skip TLS verification (self-signed)
+        </label>
+        <button
+          onClick={onAdd}
+          disabled={busy || !host.trim()}
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
+        >
+          Add / update
+        </button>
+        {note && <span className="text-xs text-zinc-500">{note}</span>}
+      </div>
+    </section>
+  );
+}
+
+function RegistryRow({
+  r,
+  disabled,
+  onRemove,
+}: {
+  r: RegistryConfig;
+  disabled: boolean;
+  onRemove: () => void;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm">
+      <div className="min-w-0">
+        <span className="font-mono text-[13px] text-zinc-200">{r.host}</span>
+        <span className="ml-2 text-[11px] text-zinc-500">
+          {r.username ? `as ${r.username}` : "anonymous"}
+          {r.hasPassword ? " · password set" : ""}
+          {r.caBundlePath ? " · custom CA" : ""}
+          {r.insecure ? " · TLS off" : ""}
+        </span>
+      </div>
+      <button
+        onClick={onRemove}
+        disabled={disabled}
+        className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 transition hover:text-red-400 disabled:opacity-50"
+      >
+        Remove
+      </button>
+    </li>
   );
 }
 

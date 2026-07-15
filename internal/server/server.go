@@ -58,11 +58,19 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 	if dockerClient != nil {
 		local = dockerClient
 	}
-	checker := updates.NewChecker(registry.NewClient(nil), local, logger)
+	// One registry client, shared by the update checker and the self-update
+	// digest resolver, wired to per-registry credentials + TLS trust from the
+	// store (§6.1/§6.2). The resolver reads the store per call, so edits apply
+	// without a restart.
+	regClient := registry.NewClient(nil)
+	if db != nil {
+		regClient.SetConfigResolver(registryConfigResolver(db))
+	}
+	checker := updates.NewChecker(regClient, local, logger)
 
 	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker, login: newLoginLimiter(),
-		verify:  cosignVerifier{},        // §3.2 in-app signature verification (bundled cosign)
-		selfReg: registry.NewClient(nil), // resolves the candidate release digest to verify
+		verify:  cosignVerifier{}, // §3.2 in-app signature verification (bundled cosign)
+		selfReg: regClient,        // resolves the candidate release digest to verify
 	}
 
 	// First-run: bootstrap the admin from env, or mint a one-time setup token.
@@ -112,6 +120,9 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Post("/settings/git-init", api.gitInit)
 			r.Post("/settings/api-token", api.generateAPIToken)
 			r.Delete("/settings/api-token", api.revokeAPIToken)
+			r.Get("/settings/registries", api.listRegistries)
+			r.Put("/settings/registries", api.putRegistry)
+			r.Delete("/settings/registries", api.deleteRegistry)
 			r.Get("/app/update", api.appUpdate)
 			r.Post("/app/update", api.selfUpdate)
 			r.Get("/updates", api.listUpdates)

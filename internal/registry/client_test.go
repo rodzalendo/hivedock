@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"os"
@@ -98,6 +99,63 @@ func TestDigestTokenChallengeFlow(t *testing.T) {
 	}
 	if dig != "sha256:deadbeef" {
 		t.Errorf("digest = %q, want sha256:deadbeef", dig)
+	}
+}
+
+func TestTokenFetchUsesBasicAuthWhenConfigured(t *testing.T) {
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("bob:s3cret"))
+	var gotAuth string
+	rt := &mockRT{fn: func(r *http.Request) *http.Response {
+		switch {
+		case strings.Contains(r.URL.Host, "auth.example"):
+			gotAuth = r.Header.Get("Authorization")
+			return mockResponse(200, map[string]string{"Content-Type": "application/json"}, `{"token":"abc"}`)
+		case strings.Contains(r.URL.Path, "/manifests/"):
+			if r.Header.Get("Authorization") == "Bearer abc" {
+				return mockResponse(200, map[string]string{"Docker-Content-Digest": "sha256:x"}, "")
+			}
+			return mockResponse(401, map[string]string{
+				"WWW-Authenticate": `Bearer realm="https://auth.example/token",service="reg",scope="repository:app:pull"`,
+			}, "")
+		}
+		return mockResponse(404, nil, "")
+	}}
+	c := testClient(rt)
+	c.SetConfigResolver(func(host string) HostConfig {
+		if host == "registry.example.com" {
+			return HostConfig{Username: "bob", Password: "s3cret"}
+		}
+		return HostConfig{}
+	})
+	ref, _ := ParseImageRef("registry.example.com/app:1")
+	if _, err := c.Digest(context.Background(), ref); err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	if gotAuth != want {
+		t.Errorf("token request Authorization = %q, want Basic-auth for the configured registry", gotAuth)
+	}
+}
+
+func TestClientForHostTLS(t *testing.T) {
+	c := testClient(&mockRT{fn: func(*http.Request) *http.Response { return mockResponse(200, nil, "") }})
+	if c.clientForHost("public.io") != c.http {
+		t.Error("no resolver → default client expected")
+	}
+	c.SetConfigResolver(func(host string) HostConfig {
+		if host == "self.signed" {
+			return HostConfig{Insecure: true}
+		}
+		return HostConfig{}
+	})
+	if c.clientForHost("public.io") != c.http {
+		t.Error("public host should reuse the default client")
+	}
+	hc := c.clientForHost("self.signed")
+	if hc == c.http {
+		t.Error("insecure host should get a dedicated client")
+	}
+	if c.clientForHost("self.signed") != hc {
+		t.Error("per-host client should be cached")
 	}
 }
 

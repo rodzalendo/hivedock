@@ -580,6 +580,40 @@ export async function revokeApiToken(): Promise<void> {
   await mutate("/api/settings/api-token", "DELETE");
 }
 
+// ---- Per-registry credentials + TLS (§6.1/§6.2) ----
+
+export interface RegistryConfig {
+  host: string;
+  username?: string;
+  hasPassword: boolean; // password is never echoed, only whether one is set
+  caBundlePath?: string;
+  insecure?: boolean;
+}
+
+export const fetchRegistries = () =>
+  getJSON<RegistryConfig[]>("/api/settings/registries");
+
+// saveRegistry upserts one registry's credentials/TLS. Leave password blank to
+// keep the stored one.
+export async function saveRegistry(cfg: {
+  host: string;
+  username?: string;
+  password?: string;
+  caBundlePath?: string;
+  insecure?: boolean;
+}): Promise<RegistryConfig[]> {
+  const res = await mutate("/api/settings/registries", "PUT", cfg);
+  return (await res.json()) as RegistryConfig[];
+}
+
+export async function deleteRegistry(host: string): Promise<RegistryConfig[]> {
+  const res = await mutate(
+    `/api/settings/registries?host=${encodeURIComponent(host)}`,
+    "DELETE",
+  );
+  return (await res.json()) as RegistryConfig[];
+}
+
 export const fetchHealth = () => getJSON<Health>("/api/health");
 
 // ---- HiveDock self-update ----

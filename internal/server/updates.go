@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strings"
@@ -200,6 +201,16 @@ func (a *api) startUpdateScheduler(ctx context.Context) {
 		defer tick.Stop()
 		for {
 			if iv := a.effectiveCheckInterval(); iv > 0 && time.Since(lastRun) >= iv {
+				// Jitter the actual start across a slice of the window so sweeps
+				// don't all hit registries at the same instant (§6.1). Per-host
+				// concurrency + 429 backoff (registry client) handle the rest.
+				if d := checkJitter(iv); d > 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(d):
+					}
+				}
 				a.backgroundCheck(ctx)
 				lastRun = time.Now()
 			}
@@ -210,6 +221,19 @@ func (a *api) startUpdateScheduler(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// checkJitter returns a random delay up to the smaller of interval/10 and 60s —
+// enough to spread scheduled sweeps without meaningfully delaying them.
+func checkJitter(interval time.Duration) time.Duration {
+	max := interval / 10
+	if max > time.Minute {
+		max = time.Minute
+	}
+	if max <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(max)))
 }
 
 // backgroundCheck runs a scheduled check over managed-stack images (skipped if a
