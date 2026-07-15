@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Go modules — pinned to the Go 1.23 transitive set on purpose (see go.mod);
+  # review carefully before merging a Docker SDK / otel bump.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Frontend dependencies.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # GitHub Actions (kept current; the release workflow signs images).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

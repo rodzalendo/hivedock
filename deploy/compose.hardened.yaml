@@ -1,0 +1,91 @@
+# HiveDock — hardened deployment profile.
+#
+# A tighter container posture than the default compose. It does NOT remove the
+# fundamental risk: while HiveDock can reach the Docker socket, it is
+# root-equivalent on the host (see THREAT_MODEL.md). What this buys you is a
+# smaller surface if the process itself is compromised, and a template for
+# read-mostly (monitoring) deployments via the socket proxy below.
+#
+# Adjust STACKS_DIR / paths to match your host. STACKS_DIR must resolve to the
+# same path inside and outside the container (compose relative-path resolution).
+
+services:
+  hivedock:
+    image: ghcr.io/rodzalendo/hivedock:latest
+    container_name: hivedock
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      PORT: "5001"
+      DATA_DIR: /app/data
+      STACKS_DIR: /opt/stacks
+      # Under a read-only rootfs, cosign can't use its baked trust-root cache in
+      # /app; point its home at a writable tmpfs. Trade-off: self-update
+      # verification then refreshes the sigstore trust root over the network on
+      # first use (an extra outbound call beyond the ghcr signature fetch).
+      HOME: /tmp
+      DOCKER_CONFIG: /tmp/.docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - hivedock-data:/app/data
+      - /opt/stacks:/opt/stacks
+
+    # --- container hardening ---------------------------------------------------
+    read_only: true # immutable rootfs; all writes go to the mounts/tmpfs below
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "1.0"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5001/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  hivedock-data:
+
+# ---------------------------------------------------------------------------
+# Read-mostly deployment via a socket proxy (optional).
+#
+# If you only want HiveDock to MONITOR stacks and check updates — not deploy or
+# stop them — you can front the Docker socket with a proxy that allows just the
+# read endpoints, and point HiveDock at it with DOCKER_HOST=tcp://socket-proxy:2375
+# (removing the direct socket mount above).
+#
+# HONEST CAVEAT: HiveDock's mutating features (deploy, stop, recreate, prune,
+# self-update) require POST/create/exec endpoints. If you enable those on the
+# proxy, it once again grants root-equivalent power — the proxy then reduces
+# surface without removing root-equivalence. Only a read-only allowlist (POST=0,
+# CONTAINERS=1, IMAGES=1, INFO=1, everything else 0) is meaningfully safer, and
+# it turns HiveDock into a read-only dashboard.
+#
+#  socket-proxy:
+#    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+#    restart: unless-stopped
+#    environment:
+#      CONTAINERS: "1"   # list/inspect containers (read)
+#      IMAGES: "1"       # list/inspect images (read)
+#      INFO: "1"
+#      PING: "1"
+#      VERSION: "1"
+#      EVENTS: "1"
+#      POST: "0"         # <- 0 = no mutations (deploy/stop/prune/self-update disabled)
+#      EXEC: "0"
+#      NETWORKS: "0"
+#      VOLUMES: "0"
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#    read_only: true
+#    cap_drop: [ALL]
+#    cap_add: [SETGID, SETUID, DAC_OVERRIDE]
+#    security_opt: [no-new-privileges:true]
+#    tmpfs: [/run]
