@@ -20,11 +20,12 @@ import (
 	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
-// handlerWithStacksDir builds an auth-disabled handler over a specific stacks
-// dir (so managed stacks resolve from real files on disk), no daemon.
+// handlerWithStacksDir builds a handler over a specific stacks dir (so managed
+// stacks resolve from real files on disk), no daemon, authenticated via the
+// trusted-header test path.
 func handlerWithStacksDir(t *testing.T, dir string) http.Handler {
 	t.Helper()
-	cfg := config.Config{Port: "5001", StacksDir: dir, AuthDisabled: true, LogLevel: slog.LevelError}
+	cfg := testAuthCfg(config.Config{Port: "5001", StacksDir: dir, LogLevel: slog.LevelError})
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	stacksSvc := stacks.NewManager(dir, nil, logger)
 	hub := events.NewHub(50 * time.Millisecond)
@@ -32,7 +33,7 @@ func handlerWithStacksDir(t *testing.T, dir string) http.Handler {
 	icons := discovery.NewIconResolver(t.TempDir(), func(context.Context, string) ([]byte, string, bool) {
 		return nil, "", false
 	})
-	return New(context.Background(), cfg, logger, nil, stacksSvc, hub, host, nil, icons, fstest.MapFS{})
+	return testAuth(New(context.Background(), cfg, logger, nil, stacksSvc, hub, host, nil, icons, fstest.MapFS{}))
 }
 
 func TestGetComposeReturnsFileContent(t *testing.T) {

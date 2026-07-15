@@ -141,14 +141,19 @@ Everything is configured with environment variables:
 | `PORT` | `5001` | HTTP listen port. |
 | `STACKS_DIR` | `/opt/stacks` | Directory scanned for `<stack>/compose.yaml`. **Must be the same path inside and outside the container** (compose resolves relative paths against it). |
 | `DATA_DIR` | `/app/data` | SQLite, icon cache, app state. |
-| `AUTH_DISABLED` | `false` | Skip login entirely. Only for trusted LANs. |
 | `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links don't rot. |
+| `AUTH_TRUSTED_HEADER` | unset | Forward-auth (SSO) header carrying the authenticated user, e.g. `Remote-User`. Enables trusted-header auth when set together with the CIDRs below. |
+| `AUTH_TRUSTED_PROXY_CIDRS` | unset | Comma-separated CIDRs of your auth proxy. The header is honored only when the direct TCP peer is inside one of them. |
 | `CHECK_INTERVAL` | `30m` | Background update-check cadence. `off` disables it; also editable live in Settings. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
+> `AUTH_DISABLED` was **removed** — it turned a socket-holding mutator into an unauthenticated proxy. The container refuses to boot if it's still set. For no-second-login SSO, use trusted-header auth (above) behind Authelia/authentik/Caddy.
+
 ### Auth
 
-A single admin account (bcrypt) is created on first run. Sessions are an HttpOnly cookie and survive restarts; every mutating request is CSRF-protected and login failures are rate-damped. `AUTH_DISABLED=true` skips all of it for trusted LAN setups.
+A single admin account (bcrypt) is created on first run. Sessions are an HttpOnly cookie and survive restarts; every mutating request is CSRF-protected and login failures are rate-damped.
+
+For SSO without a second login, put HiveDock behind a forward-auth proxy (Authelia, authentik, Caddy `forward_auth`) and set `AUTH_TRUSTED_HEADER` to the header it injects (e.g. `Remote-User`) plus `AUTH_TRUSTED_PROXY_CIDRS` to the proxy's network. The header is trusted **only** when the request's real TCP peer is inside one of those CIDRs (checked before any `X-Forwarded-For` rewriting), so it can't be spoofed from outside.
 
 ### Reverse proxy / HTTPS
 

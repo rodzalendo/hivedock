@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -24,18 +25,20 @@ const (
 
 // authStatusResponse drives the SPA's initial routing: setup vs login vs app.
 type authStatusResponse struct {
-	AuthDisabled  bool   `json:"authDisabled"`
 	NeedsSetup    bool   `json:"needsSetup"`
 	Authenticated bool   `json:"authenticated"`
 	Username      string `json:"username,omitempty"`
+	ViaProxy      bool   `json:"viaProxy,omitempty"` // authenticated by a trusted proxy header (no local session)
 }
 
 // requireAuth gates a route group on a valid session and (for unsafe methods) a
-// matching CSRF token. When AUTH_DISABLED is set it is a passthrough — the
-// documented escape hatch for trusted LAN test envs.
+// matching CSRF token. A trusted-header (forward-auth) request from a configured
+// proxy CIDR is authenticated directly — no session cookie, so no CSRF check
+// applies (a browser can't forge a request carrying that header from within the
+// trusted network).
 func (a *api) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if a.cfg.AuthDisabled {
+		if _, ok := a.trustedHeaderUser(r); ok {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -67,6 +70,39 @@ func (a *api) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// trustedHeaderUser returns the authenticated username from the configured
+// forward-auth header when the request's *direct TCP peer* (captured before any
+// X-Forwarded-For rewriting, see peerIP) is inside a trusted proxy CIDR. This is
+// the SSO replacement for the removed AUTH_DISABLED. The value is used only as a
+// display/audit name — the model is single-admin.
+func (a *api) trustedHeaderUser(r *http.Request) (string, bool) {
+	if a.cfg.TrustedHeader == "" || len(a.cfg.TrustedProxyCIDRs) == 0 {
+		return "", false
+	}
+	if !a.peerTrusted(peerIP(r)) {
+		return "", false
+	}
+	v := strings.TrimSpace(r.Header.Get(a.cfg.TrustedHeader))
+	if v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// peerTrusted reports whether ip parses and falls inside a configured CIDR.
+func (a *api) peerTrusted(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, n := range a.cfg.TrustedProxyCIDRs {
+		if n.Contains(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
 func isSafeMethod(m string) bool {
 	switch m {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -86,12 +122,17 @@ func csrfOK(r *http.Request) bool {
 	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(c.Value)) == 1
 }
 
-// authStatus reports whether auth is disabled, needs first-run setup, and
-// whether the caller is currently authenticated. Public (drives the login gate).
+// authStatus reports whether first-run setup is needed and whether the caller
+// is currently authenticated (via a trusted proxy header or a session). Public
+// (drives the login gate).
 func (a *api) authStatus(w http.ResponseWriter, r *http.Request) {
-	resp := authStatusResponse{AuthDisabled: a.cfg.AuthDisabled}
-	if a.cfg.AuthDisabled {
+	var resp authStatusResponse
+	// A trusted proxy header authenticates directly; no local admin/session is
+	// needed, so short-circuit before the setup check.
+	if user, ok := a.trustedHeaderUser(r); ok {
 		resp.Authenticated = true
+		resp.Username = user
+		resp.ViaProxy = true
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -121,10 +162,6 @@ func (a *api) authStatus(w http.ResponseWriter, r *http.Request) {
 
 // authSetup performs first-run admin creation, then logs the new admin in.
 func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
-	if a.cfg.AuthDisabled {
-		writeError(w, http.StatusConflict, "authentication is disabled")
-		return
-	}
 	if a.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "store unavailable")
 		return
@@ -166,10 +203,6 @@ func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
 
 // authLogin verifies credentials and establishes a session.
 func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
-	if a.cfg.AuthDisabled {
-		writeError(w, http.StatusConflict, "authentication is disabled")
-		return
-	}
 	if a.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "store unavailable")
 		return

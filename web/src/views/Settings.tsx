@@ -41,10 +41,7 @@ export default function Settings() {
           <Row label="Stacks directory" value={data.stacksDir} mono />
           <Row label="Data directory" value={data.dataDir} mono />
           <Row label="Public host" value={data.publicHost || "(request host)"} />
-          <Row
-            label="Authentication"
-            value={data.authDisabled ? "disabled (AUTH_DISABLED)" : "enabled"}
-          />
+          <Row label="Authentication" value={data.authMode} />
           <Row label="Version" value={data.version} mono />
         </dl>
       </section>

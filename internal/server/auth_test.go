@@ -29,7 +29,7 @@ func authTestHandler(t *testing.T) http.Handler {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg := config.Config{Port: "5001", StacksDir: stacksDir, AuthDisabled: false, LogLevel: slog.LevelError}
+	cfg := config.Config{Port: "5001", StacksDir: stacksDir, LogLevel: slog.LevelError}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
 	hub := events.NewHub(50 * time.Millisecond)
@@ -144,6 +144,88 @@ func TestAuthSetupLoginFlow(t *testing.T) {
 	rec = postJSON(t, h, "/api/auth/login", map[string]string{"username": "admin", "password": "hunter2!pass"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("good login = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTrustedHeaderAuth(t *testing.T) {
+	stacksDir := t.TempDir()
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	cfg := testAuthCfg(config.Config{Port: "5001", StacksDir: stacksDir, LogLevel: slog.LevelError})
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
+	hub := events.NewHub(50 * time.Millisecond)
+	host := hoststats.NewSampler(time.Second)
+	icons := discovery.NewIconResolver(t.TempDir(), func(context.Context, string) ([]byte, string, bool) {
+		return nil, "", false
+	})
+	// No testAuth wrapper here: this test drives the header/peer itself.
+	h := New(context.Background(), cfg, logger, db, stacksSvc, hub, host, nil, icons, fstest.MapFS{})
+
+	// In-CIDR peer (httptest default 192.0.2.1) + header → authenticated.
+	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.Header.Set("X-Test-User", "alice")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("in-CIDR trusted header = %d, want 200", rec.Code)
+	}
+
+	// Header present but the real TCP peer is OUTSIDE the trusted CIDR — a
+	// spoofed forward-auth header from an untrusted client → rejected. This is
+	// the security-critical case.
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.RemoteAddr = "10.0.0.9:5555"
+	req.Header.Set("X-Test-User", "alice")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("out-of-CIDR trusted header = %d, want 401", rec.Code)
+	}
+
+	// Spoofing X-Forwarded-For must not fool the CIDR test (capturePeer runs
+	// before RealIP; the decision uses the genuine peer, still 10.0.0.9).
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.RemoteAddr = "10.0.0.9:5555"
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
+	req.Header.Set("X-Test-User", "alice")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("XFF-spoofed peer = %d, want 401", rec.Code)
+	}
+
+	// No header from an in-CIDR peer → falls through to session auth → 401.
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no header = %d, want 401", rec.Code)
+	}
+
+	// authStatus reflects proxy auth.
+	req = httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("X-Test-User", "alice")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var st authStatusResponse
+	json.Unmarshal(rec.Body.Bytes(), &st)
+	if !st.Authenticated || !st.ViaProxy || st.Username != "alice" {
+		t.Fatalf("authStatus via proxy = %+v", st)
+	}
+
+	// A mutation via trusted header needs no CSRF token (no cookie to forge).
+	body, _ := json.Marshal(map[string]bool{"hidden": true})
+	req = httptest.NewRequest(http.MethodPut, "/api/home/foo/bar/visibility", bytes.NewReader(body))
+	req.Header.Set("X-Test-User", "alice")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("trusted-header mutation = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,10 +20,30 @@ import (
 	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
+// testAuthCfg configures trusted-header auth so tests authenticate without a
+// database or session: httptest requests carry RemoteAddr 192.0.2.1, inside the
+// CIDR below, and testAuth() injects the header. This exercises the real
+// forward-auth path — the supported replacement for the removed AUTH_DISABLED.
+func testAuthCfg(cfg config.Config) config.Config {
+	_, cidr, _ := net.ParseCIDR("192.0.2.0/24")
+	cfg.TrustedHeader = "X-Test-User"
+	cfg.TrustedProxyCIDRs = []*net.IPNet{cidr}
+	return cfg
+}
+
+// testAuth wraps a handler to inject the trusted-header on every request, so the
+// existing (pre-auth) tests keep passing unchanged.
+func testAuth(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Test-User", "admin")
+		h.ServeHTTP(w, r)
+	})
+}
+
 func testHandler(t *testing.T, dist fs.FS) http.Handler {
 	t.Helper()
 	stacksDir := t.TempDir() // empty dir -> empty stacks list, no daemon
-	cfg := config.Config{Port: "5001", StacksDir: stacksDir, AuthDisabled: true, LogLevel: slog.LevelError}
+	cfg := testAuthCfg(config.Config{Port: "5001", StacksDir: stacksDir, LogLevel: slog.LevelError})
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	stacksSvc := stacks.NewManager(stacksDir, nil, logger)
 	hub := events.NewHub(50 * time.Millisecond)
@@ -31,7 +52,7 @@ func testHandler(t *testing.T, dist fs.FS) http.Handler {
 		return nil, "", false
 	})
 	// db and docker are unused by the routes under test; keep them nil.
-	return New(context.Background(), cfg, logger, nil, stacksSvc, hub, host, nil, icons, dist)
+	return testAuth(New(context.Background(), cfg, logger, nil, stacksSvc, hub, host, nil, icons, dist))
 }
 
 func TestHealth(t *testing.T) {
@@ -52,9 +73,6 @@ func TestHealth(t *testing.T) {
 	}
 	if got.StacksDir == "" {
 		t.Errorf("stacksDir is empty")
-	}
-	if !got.AuthDisabled {
-		t.Errorf("authDisabled = false, want true")
 	}
 }
 

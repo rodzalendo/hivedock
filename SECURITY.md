@@ -43,8 +43,10 @@ Nothing else leaves the box. If you find a connection not on this list, that's a
 
 Being explicit beats being discovered. On the current roadmap (see `docs/HARDENING.md`):
 
-- **`AUTH_DISABLED=true`** exists as an escape hatch for trusted LANs; when set it removes authentication entirely. It is slated for removal in favor of trusted-header (forward-auth) SSO. **Do not use it on any network you don't fully trust.**
 - **Self-update is not yet signature-verified.** It pulls the newest release image and recreates HiveDock's own container; cosign verification and digest-pinning of that flow are planned.
 - **No at-rest encryption** for stored settings beyond filesystem permissions.
+- **First-run setup is not yet token-gated** — on a fresh install, whoever reaches the setup screen first becomes admin. Complete setup promptly on a trusted network; a one-time log-printed setup token is planned.
+
+> **`AUTH_DISABLED` was removed.** It disabled authentication entirely and turned a socket-holding mutator into an open proxy. The container now refuses to boot if the variable is still set. Use trusted-header (forward-auth) SSO instead: set `AUTH_TRUSTED_HEADER` + `AUTH_TRUSTED_PROXY_CIDRS` behind Authelia/authentik/Caddy. The header is honored only when the request's real TCP peer is inside a configured CIDR (evaluated before `X-Forwarded-For` rewriting), so it cannot be spoofed from outside your proxy network.
 
 If any of these blocks your use case, run behind a proxy that adds the missing control, and watch the releases.

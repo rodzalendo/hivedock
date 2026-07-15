@@ -31,6 +31,21 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(logger)
 
+	// AUTH_DISABLED was removed: it turned a socket-holding mutator into an
+	// unauthenticated proxy. Fail loudly on a truthy value rather than silently
+	// enabling auth (which would strand a user at a login they never created) —
+	// a security switch that stops working must be impossible to miss.
+	if present, truthy := config.AuthDisabledRemoved(); present {
+		if truthy {
+			logger.Error("AUTH_DISABLED was removed — it disabled authentication entirely. " +
+				"Use trusted-header (forward-auth) SSO via AUTH_TRUSTED_HEADER + AUTH_TRUSTED_PROXY_CIDRS " +
+				"(see SECURITY.md and docs/HARDENING.md §2.2), or remove the variable and complete " +
+				"first-run setup at the login screen.")
+			os.Exit(1)
+		}
+		logger.Warn("AUTH_DISABLED is set but has been removed and no longer has any effect; delete it from your config")
+	}
+
 	if err := run(cfg, logger); err != nil {
 		logger.Error("fatal", "err", err)
 		os.Exit(1)
@@ -97,7 +112,7 @@ func run(cfg config.Config, logger *slog.Logger) error {
 			"addr", httpServer.Addr,
 			"stacks_dir", cfg.StacksDir,
 			"data_dir", cfg.DataDir,
-			"auth_disabled", cfg.AuthDisabled,
+			"trusted_header_auth", cfg.TrustedHeader != "",
 		)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err

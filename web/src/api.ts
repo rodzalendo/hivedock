@@ -5,7 +5,6 @@ export interface Health {
   status: string;
   version: string;
   stacksDir: string;
-  authDisabled: boolean;
   time: string;
 }
 
@@ -225,10 +224,10 @@ export async function setServiceUrl(
 // ---- Auth ----
 
 export interface AuthStatus {
-  authDisabled: boolean;
   needsSetup: boolean;
   authenticated: boolean;
   username?: string;
+  viaProxy?: boolean; // authenticated by a trusted proxy header (no local session)
 }
 
 export const fetchAuthStatus = () => getJSON<AuthStatus>("/api/auth/status");
@@ -467,7 +466,7 @@ export interface Settings {
   dataDir: string;
   checkInterval: string;
   publicHost: string;
-  authDisabled: boolean;
+  authMode: string;
   version: string;
 }
 

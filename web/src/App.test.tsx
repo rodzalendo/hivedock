@@ -62,9 +62,9 @@ function mockApi() {
       }
       if (url.includes("/api/auth/status")) {
         return jsonResponse({
-          authDisabled: true,
           needsSetup: false,
           authenticated: true,
+          username: "admin",
         });
       }
       if (url.includes("/api/app/update")) {
@@ -79,7 +79,6 @@ function mockApi() {
           status: "ok",
           version: "test",
           stacksDir: "/srv/stacks",
-          authDisabled: true,
           time: "2026-07-10T00:00:00Z",
         });
       }

@@ -9,14 +9,19 @@ merge (update both together, per house rules). `docs/PRD.md` non-goals still bin
 > every predictable audit question has a written answer and a test behind it
 > before strangers read the repo.
 >
-> **Landed (first safe increment, v0.3.2):** §4.4 WS same-origin check, §4.6
-> log-line escape sanitization + the `dangerouslySetInnerHTML` CI gate, and the
-> disclosure groundwork — `SECURITY.md` (with the §3.5 outbound inventory) and
-> the README security section. These are self-contained and non-disruptive; they
-> deliberately avoid the auth model (§2) and the self-update apply path (§3),
-> which are operationally disruptive (boot refusal, re-login, cosign-in-CI) and
-> are sequenced as dedicated phases below. **Not yet done:** §2, §3, §4.1–§4.3,
-> §4.5, §4.7, §4.8, §5, §6, and `THREAT_MODEL.md`.
+> **Landed (v0.3.2):** §4.4 WS same-origin, §4.6 log-escape sanitization + the
+> `dangerouslySetInnerHTML` CI gate, `SECURITY.md` + README security section.
+>
+> **Landed (v0.4.0, Phase A core):** §2.1 `AUTH_DISABLED` removed with boot
+> refusal on a truthy value; §2.2 trusted-header forward-auth (peer-CIDR gated,
+> real TCP peer captured before `X-Forwarded-For` via `capturePeer`, CSRF skipped
+> on the header path); WS/REST both behind it; test harness migrated onto the
+> trusted-header path (dogfoods §2.2). Spoof-rejection is tested. **Still open in
+> §2:** §2.3 first-run setup token + `ADMIN_USER`/`ADMIN_PASSWORD_FILE`, §2.4
+> rate limiting + session-token hashing/rotation/expiry.
+>
+> **Not yet done:** §2.3, §2.4, §3 (self-update verification), §4.1–§4.3, §4.5,
+> §4.7, §4.8, §5, §6, and `THREAT_MODEL.md`.
 
 ## 1. Scope
 
@@ -32,7 +37,7 @@ part of this plan.
 
 ## 2. Auth
 
-### 2.1 `AUTH_DISABLED` is removed
+### 2.1 `AUTH_DISABLED` is removed — ✅ shipped (v0.4.0)
 
 The env var turned a socket-holding mutator into an unauthenticated proxy for
 anyone who could reach the port. No upside proportional to that. Deleted, not
@@ -45,10 +50,13 @@ never created credentials, so silently enabling auth strands them at a login the
 don't have; and a security switch that stops working should be impossible to miss.
 An explicit failure gets read. A silent behavior change gets a confused issue.
 
-### 2.2 Trusted-header forward auth (the SSO replacement)
+### 2.2 Trusted-header forward auth (the SSO replacement) — ✅ shipped (v0.4.0)
 
 For the legitimate `AUTH_DISABLED` use case: Authelia/authentik/Caddy in front,
-no second login.
+no second login. Implemented as `AUTH_TRUSTED_HEADER` + `AUTH_TRUSTED_PROXY_CIDRS`;
+the CIDR test uses the real TCP peer captured by `capturePeer` (before RealIP's
+`X-Forwarded-For` rewrite). Copy-paste proxy snippets and the "disable password
+login" toggle are still to write.
 
 | Env | Meaning |
 |---|---|

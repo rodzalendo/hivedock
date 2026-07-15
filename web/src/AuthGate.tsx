@@ -44,7 +44,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!data.authDisabled && !data.authenticated) {
+  if (!data.authenticated) {
     return (
       <AuthScreen mode={data.needsSetup ? "setup" : "login"} onDone={onAuthed} />
     );

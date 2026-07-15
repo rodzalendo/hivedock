@@ -16,7 +16,7 @@ type settingsResponse struct {
 	DataDir       string `json:"dataDir"`
 	CheckInterval string `json:"checkInterval"` // human duration, or "disabled"
 	PublicHost    string `json:"publicHost"`
-	AuthDisabled  bool   `json:"authDisabled"`
+	AuthMode      string `json:"authMode"` // "password" | "trusted header (forward auth)"
 	Version       string `json:"version"`
 }
 
@@ -49,12 +49,16 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		interval = s
 	}
+	authMode := "password"
+	if a.cfg.TrustedHeader != "" {
+		authMode = "trusted header (forward auth)"
+	}
 	writeJSON(w, http.StatusOK, settingsResponse{
 		StacksDir:     a.cfg.StacksDir,
 		DataDir:       a.cfg.DataDir,
 		CheckInterval: interval,
 		PublicHost:    a.cfg.PublicHost,
-		AuthDisabled:  a.cfg.AuthDisabled,
+		AuthMode:      authMode,
 		Version:       version,
 	})
 }

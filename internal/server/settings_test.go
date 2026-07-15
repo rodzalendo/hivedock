@@ -20,7 +20,8 @@ import (
 	"github.com/rogalinski/hivedock/internal/store"
 )
 
-// dbHandler builds an auth-disabled handler backed by a real store.
+// dbHandler builds a handler backed by a real store, authenticated via the
+// trusted-header test path (see testAuthCfg/testAuth in server_test.go).
 func dbHandler(t *testing.T, cfg config.Config) http.Handler {
 	t.Helper()
 	db, err := store.Open(t.TempDir())
@@ -28,7 +29,7 @@ func dbHandler(t *testing.T, cfg config.Config) http.Handler {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	cfg.AuthDisabled = true
+	cfg = testAuthCfg(cfg)
 	cfg.LogLevel = slog.LevelError
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 	stacksSvc := stacks.NewManager(cfg.StacksDir, nil, logger)
@@ -37,7 +38,7 @@ func dbHandler(t *testing.T, cfg config.Config) http.Handler {
 	icons := discovery.NewIconResolver(t.TempDir(), func(context.Context, string) ([]byte, string, bool) {
 		return nil, "", false
 	})
-	return New(context.Background(), cfg, logger, db, stacksSvc, hub, host, nil, icons, fstest.MapFS{})
+	return testAuth(New(context.Background(), cfg, logger, db, stacksSvc, hub, host, nil, icons, fstest.MapFS{}))
 }
 
 func TestSettingsGetReflectsConfig(t *testing.T) {

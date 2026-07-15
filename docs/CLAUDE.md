@@ -29,7 +29,7 @@ Always run `task test` and `task lint` before considering a task done. Phase exi
 2. **File edits preserve formatting.** Tag rewrites are targeted scalar edits on the `image:` line. Parse-and-dump YAML rewriting is forbidden — it destroys comments and ordering. If a tag is env-interpolated (`image: x:${TAG}`), do NOT rewrite; surface it as .env-managed.
 3. **The UI never lies.** Containers we didn't create are shown (read-only), not hidden. Drift is always surfaced. Failed operations show real stderr, not generic errors.
 4. **Stacks dir path must match inside/outside the container** (compose relative-path resolution). Don't break this assumption in code or docs.
-5. **No mutations without auth** (unless `AUTH_DISABLED=true`). Every mutating endpoint checks session + CSRF.
+5. **No mutations without auth.** Every mutating endpoint requires a valid session (+ CSRF for unsafe methods) or a trusted-proxy header from a configured CIDR. `AUTH_DISABLED` was removed — there is no auth-bypass switch, and one must never be reintroduced (see docs/HARDENING.md §2). Trusted-header trust is decided by the real TCP peer (captured before `X-Forwarded-For` rewriting), never a forwarded header.
 6. **Scope:** check `docs/PRD.md` non-goals before adding features. Multi-host, k8s, widgets, auto-update are out.
 7. **Test deployments target `/opt/stacks-test` on PCT 102.** Never point a dev/test build at the real `/opt/stacks`, and never run destructive operations against stacks Hivedock didn't create there. Switching to the real stacks dir happens once, deliberately, after Phase 3 exit criteria pass (see docs/DEPLOYMENT.md).
 

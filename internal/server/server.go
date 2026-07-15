@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -34,6 +35,10 @@ var version = "dev"
 // periodic update scheduler); cancel it to stop them.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
 	r := chi.NewRouter()
+	// capturePeer must run BEFORE RealIP: trusted-header auth decides trust from
+	// the real TCP peer, and RealIP overwrites RemoteAddr from X-Forwarded-For
+	// (which is attacker-controllable). Order matters for a security invariant.
+	r.Use(capturePeer)
 	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
@@ -63,7 +68,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 			r.With(api.requireAuth).Post("/logout", api.authLogout)
 		})
 
-		// Everything else requires a session (bypassed by AUTH_DISABLED).
+		// Everything else requires a session or a trusted-proxy header.
 		r.Group(func(r chi.Router) {
 			r.Use(api.requireAuth)
 			r.Get("/ws", api.websocket)
@@ -128,20 +133,18 @@ func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthResponse struct {
-	Status       string `json:"status"`
-	Version      string `json:"version"`
-	StacksDir    string `json:"stacksDir"`
-	AuthDisabled bool   `json:"authDisabled"`
-	Time         string `json:"time"`
+	Status    string `json:"status"`
+	Version   string `json:"version"`
+	StacksDir string `json:"stacksDir"`
+	Time      string `json:"time"`
 }
 
 func (a *api) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
-		Status:       "ok",
-		Version:      version,
-		StacksDir:    a.cfg.StacksDir,
-		AuthDisabled: a.cfg.AuthDisabled,
-		Time:         time.Now().UTC().Format(time.RFC3339),
+		Status:    "ok",
+		Version:   version,
+		StacksDir: a.cfg.StacksDir,
+		Time:      time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -156,6 +159,32 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// peerCtxKey holds the real TCP peer IP captured before any proxy-header
+// rewriting. Unexported type prevents collisions with other context values.
+type peerCtxKey struct{}
+
+// capturePeer stashes the request's genuine TCP peer IP in the context before
+// middleware.RealIP can rewrite RemoteAddr from X-Forwarded-For. Trusted-header
+// auth reads this, never the (spoofable) rewritten address.
+func capturePeer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		ctx := context.WithValue(r.Context(), peerCtxKey{}, host)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// peerIP returns the real TCP peer IP captured by capturePeer, or "" if absent.
+func peerIP(r *http.Request) string {
+	if v, ok := r.Context().Value(peerCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // securityHeaders sets baseline browser protections on every response. The CSP

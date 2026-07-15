@@ -1,7 +1,6 @@
 # Copy to /opt/hivedock/compose.yaml on PCT 102 for the first deploy, then:
 #   docker compose pull && docker compose up -d
-# See docs/DEPLOYMENT.md. Test env only: AUTH_DISABLED behind the LAN, and
-# STACKS_DIR points at /opt/stacks-test until Phase 3 exit criteria pass.
+# See docs/DEPLOYMENT.md. STACKS_DIR points at /opt/stacks-test.
 # :edge is published on every push to main; tag vX.Y.Z for :latest/:X.Y.Z.
 services:
   hivedock:
@@ -17,5 +16,6 @@ services:
     environment:
       - STACKS_DIR=/opt/stacks-test
       - DATA_DIR=/app/data
-      - AUTH_DISABLED=true                   # test env only; behind LAN
       - LOG_LEVEL=info
+      # Auth is ON (first-run setup at the login screen). AUTH_DISABLED was
+      # removed — the container refuses to boot if it's still set.

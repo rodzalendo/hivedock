@@ -337,8 +337,19 @@ function SessionControls({
   onLogout: () => void;
 }) {
   if (!auth) return null;
-  if (auth.authDisabled) {
-    return <span className="text-[10px] text-amber-500/70">Auth disabled</span>;
+  // Trusted-proxy (forward-auth) sessions have no local session to end — the
+  // proxy owns sign-out — so show the user with an SSO tag and no button.
+  if (auth.viaProxy) {
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-xs text-zinc-500">
+          {auth.username ?? "admin"}
+        </span>
+        <span className="text-[10px] text-zinc-600" title="Authenticated by your reverse proxy">
+          SSO
+        </span>
+      </div>
+    );
   }
   return (
     <div className="flex items-center justify-between gap-2">
