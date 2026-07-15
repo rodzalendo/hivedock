@@ -7,6 +7,7 @@ import {
   validateCompose,
   saveCompose,
   type ValidateResult,
+  type SaveConflict,
 } from "../api";
 
 type Feedback =
@@ -29,6 +30,8 @@ export default function ComposeEditor({ stack }: { stack: string }) {
 
   const [text, setText] = useState<string>("");
   const [savedText, setSavedText] = useState<string>("");
+  const [baseSha, setBaseSha] = useState<string>("");
+  const [conflict, setConflict] = useState<SaveConflict | null>(null);
   const [feedback, setFeedback] = useState<Feedback>({ kind: "none" });
   const [busy, setBusy] = useState(false);
 
@@ -37,6 +40,8 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     if (data) {
       setText(data.content);
       setSavedText(data.content);
+      setBaseSha(data.sha256);
+      setConflict(null);
       setFeedback({ kind: "none" });
     }
   }, [data]);
@@ -60,13 +65,21 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     }
   }
 
-  async function onSave() {
+  // save writes text against the given base hash. onSave uses the loaded hash;
+  // the conflict "Overwrite" button re-saves against the current on-disk hash.
+  async function save(base: string) {
     setBusy(true);
     setFeedback({ kind: "none" });
     try {
-      const saved = await saveCompose(stack, text);
-      setSavedText(saved.content);
-      setText(saved.content);
+      const res = await saveCompose(stack, text, base);
+      if (!res.ok) {
+        setConflict(res.conflict);
+        return;
+      }
+      setSavedText(res.file.content);
+      setText(res.file.content);
+      setBaseSha(res.file.sha256);
+      setConflict(null);
       setFeedback({ kind: "saved", msg: "Saved. Deploy from the Deploy tab to apply." });
     } catch (err) {
       // A 422 carries compose's own validation message.
@@ -74,6 +87,16 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Discard my edits and load the version that's on disk now.
+  function loadDiskVersion() {
+    if (!conflict) return;
+    setText(conflict.content);
+    setSavedText(conflict.content);
+    setBaseSha(conflict.sha256);
+    setConflict(null);
+    setFeedback({ kind: "none" });
   }
 
   if (isLoading) {
@@ -111,7 +134,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
-          onClick={onSave}
+          onClick={() => void save(baseSha)}
           disabled={busy || !dirty}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
         >
@@ -138,6 +161,32 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           Save writes the file; it does not redeploy.
         </span>
       </div>
+
+      {conflict && (
+        <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <p className="font-medium text-amber-300">{conflict.message}</p>
+          <p className="mt-1 text-amber-200/80">
+            Someone (or something) changed this file on disk since you opened it.
+            Keep your version, or discard your edits and load theirs.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={() => void save(conflict.sha256)}
+              disabled={busy}
+              className="rounded-md bg-amber-500 px-2.5 py-1 font-medium text-zinc-950 transition hover:bg-amber-400 disabled:opacity-50"
+            >
+              Overwrite with mine
+            </button>
+            <button
+              onClick={loadDiskVersion}
+              disabled={busy}
+              className="rounded-md border border-amber-500/40 px-2.5 py-1 text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
+            >
+              Discard mine, load theirs
+            </button>
+          </div>
+        </div>
+      )}
 
       {feedback.kind !== "none" && (
         <pre

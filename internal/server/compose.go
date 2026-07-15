@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -19,6 +21,13 @@ const maxComposeBytes = 1 << 20 // 1 MiB
 type composeFileResponse struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+	Sha256  string `json:"sha256"` // hash of Content; present it on save (optimistic lock, §5.1)
+}
+
+// sha256hex returns the lowercase hex SHA-256 of b (of "" for a missing file).
+func sha256hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // managedComposeFile resolves a managed stack's compose file path, writing the
@@ -75,7 +84,7 @@ func (a *api) getCompose(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to read compose file: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, composeFileResponse{Path: st.ComposeFile, Content: string(data)})
+	writeJSON(w, http.StatusOK, composeFileResponse{Path: st.ComposeFile, Content: string(data), Sha256: sha256hex(data)})
 }
 
 // validateCompose checks a candidate compose body via `docker compose config`
@@ -85,7 +94,7 @@ func (a *api) validateCompose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	content, ok := readContentBody(w, r)
+	content, _, ok := readContentBody(w, r)
 	if !ok {
 		return
 	}
@@ -104,12 +113,16 @@ func (a *api) putCompose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	content, ok := readContentBody(w, r)
+	content, baseSha, ok := readContentBody(w, r)
 	if !ok {
 		return
 	}
 	real, ok := a.containedPath(w, st.ComposeFile)
 	if !ok {
+		return
+	}
+	// Optimistic lock: refuse if the file changed on disk since it was loaded.
+	if !a.checkOptimisticLock(w, real, baseSha) {
 		return
 	}
 	// Validate before touching disk — a bad draft must never clobber the file.
@@ -124,25 +137,55 @@ func (a *api) putCompose(w http.ResponseWriter, r *http.Request) {
 	}
 	a.logger.Info("compose saved", "stack", st.Name, "path", st.ComposeFile, "bytes", len(content))
 	a.hub.NotifyChanged("compose:saved")
-	writeJSON(w, http.StatusOK, composeFileResponse{Path: st.ComposeFile, Content: string(content)})
+	writeJSON(w, http.StatusOK, composeFileResponse{Path: st.ComposeFile, Content: string(content), Sha256: sha256hex(content)})
 }
 
-// readContentBody reads a {content:"…"} JSON body up to the size cap. Shared by
-// the compose and .env editors.
-func readContentBody(w http.ResponseWriter, r *http.Request) (content []byte, ok bool) {
+// readContentBody reads a {content, baseSha256} JSON body up to the size cap.
+// baseSha256 is the hash the client loaded (optimistic-lock check on save, §5.1);
+// it is empty for callers that don't lock (e.g. validate). Shared by the compose
+// and .env editors.
+func readContentBody(w http.ResponseWriter, r *http.Request) (content []byte, baseSha string, ok bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxComposeBytes)
 	var body struct {
-		Content string `json:"content"`
+		Content    string `json:"content"`
+		BaseSha256 string `json:"baseSha256"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		if _, isMax := err.(*http.MaxBytesError); isMax {
 			writeError(w, http.StatusRequestEntityTooLarge, "file too large")
-			return nil, false
+			return nil, "", false
 		}
 		writeError(w, http.StatusBadRequest, "invalid request body")
-		return nil, false
+		return nil, "", false
 	}
-	return []byte(body.Content), true
+	return []byte(body.Content), body.BaseSha256, true
+}
+
+// checkOptimisticLock enforces §5.1: if base (the hash the editor loaded) is set
+// and no longer matches the file currently on disk at real, the save is refused
+// with 409 and the fresh content + hash, so the UI can reload-and-reapply or
+// overwrite rather than silently clobber an edit made out of band (e.g. SSH). A
+// missing file hashes as "" (a not-yet-created .env). Returns ok=false when it
+// has written the conflict response.
+func (a *api) checkOptimisticLock(w http.ResponseWriter, real, base string) bool {
+	if base == "" {
+		return true // caller didn't lock; nothing to check
+	}
+	current, err := os.ReadFile(real)
+	if err != nil && !os.IsNotExist(err) {
+		a.logger.Error("optimistic lock: read current", "path", real, "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to check the file on disk")
+		return false
+	}
+	if cur := sha256hex(current); cur != base {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   "this file changed on disk since you opened it",
+			"content": string(current),
+			"sha256":  cur,
+		})
+		return false
+	}
+	return true
 }
 
 // atomicWrite writes data to a temp file in the target's directory and renames

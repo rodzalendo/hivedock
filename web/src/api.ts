@@ -335,11 +335,58 @@ export async function renameStack(
 export interface ComposeFile {
   path: string;
   content: string;
+  sha256: string; // hash of content when loaded; echoed on save (optimistic lock)
 }
 
 export interface ValidateResult {
   valid: boolean;
   error?: string;
+}
+
+// A save was refused because the file changed on disk since it was loaded (§5.1).
+// content/sha256 are the current on-disk version, so the UI can reload or overwrite.
+export interface SaveConflict {
+  message: string;
+  content: string;
+  sha256: string;
+}
+
+export type SaveResult<T> =
+  | { ok: true; file: T }
+  | { ok: false; conflict: SaveConflict };
+
+// saveWithLock PUTs {content, baseSha256}; a 409 is mapped to a SaveConflict
+// (not thrown) so the caller can reconcile. Other non-2xx still throw.
+async function saveWithLock<T>(
+  url: string,
+  content: string,
+  baseSha256: string,
+): Promise<SaveResult<T>> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+    body: JSON.stringify({ content, baseSha256 }),
+  });
+  if (res.status === 409) {
+    const c = (await res.json()) as {
+      error?: string;
+      content?: string;
+      sha256?: string;
+    };
+    return {
+      ok: false,
+      conflict: {
+        message: c.error ?? "This file changed on disk since you opened it.",
+        content: c.content ?? "",
+        sha256: c.sha256 ?? "",
+      },
+    };
+  }
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized();
+    throw new Error(await errorMessage(res));
+  }
+  return { ok: true, file: (await res.json()) as T };
 }
 
 export const fetchCompose = (name: string) =>
@@ -361,18 +408,14 @@ export async function validateCompose(
 }
 
 // saveCompose validates server-side then writes the file (save ≠ deploy). A
-// 422 (invalid compose) surfaces as a thrown Error carrying compose's message.
-export async function saveCompose(
-  name: string,
-  content: string,
-): Promise<ComposeFile> {
-  const res = await mutate(
+// 422 (invalid compose) surfaces as a thrown Error carrying compose's message;
+// a 409 (file changed on disk) returns a SaveConflict to reconcile.
+export const saveCompose = (name: string, content: string, baseSha256: string) =>
+  saveWithLock<ComposeFile>(
     `/api/stacks/${encodeURIComponent(name)}/compose`,
-    "PUT",
-    { content },
+    content,
+    baseSha256,
   );
-  return (await res.json()) as ComposeFile;
-}
 
 // ---- Updates ----
 
@@ -444,21 +487,20 @@ export interface EnvFile {
   path: string;
   content: string;
   exists: boolean;
+  sha256: string; // hash of content when loaded; echoed on save (optimistic lock)
 }
 
 export const fetchEnv = (name: string) =>
   getJSON<EnvFile>(`/api/stacks/${encodeURIComponent(name)}/env`);
 
-// saveEnv writes the stack's .env (creating it if needed). Save ≠ deploy — the
-// change applies on the next deploy.
-export async function saveEnv(name: string, content: string): Promise<EnvFile> {
-  const res = await mutate(
+// saveEnv writes the stack's .env (creating it if needed). Save ≠ deploy. A 409
+// (file changed on disk) returns a SaveConflict to reconcile.
+export const saveEnv = (name: string, content: string, baseSha256: string) =>
+  saveWithLock<EnvFile>(
     `/api/stacks/${encodeURIComponent(name)}/env`,
-    "PUT",
-    { content },
+    content,
+    baseSha256,
   );
-  return (await res.json()) as EnvFile;
-}
 
 // ---- Settings ----
 

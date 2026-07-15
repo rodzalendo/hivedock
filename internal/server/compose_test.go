@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -64,6 +65,63 @@ func TestGetComposeReturnsFileContent(t *testing.T) {
 	}
 	if got.Path == "" {
 		t.Error("empty path in response")
+	}
+}
+
+func TestEnvSaveOptimisticLock(t *testing.T) {
+	dir := t.TempDir()
+	stackDir := filepath.Join(dir, "web")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "compose.yaml"), []byte("services:\n  web:\n    image: nginx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(stackDir, ".env")
+	if err := os.WriteFile(envPath, []byte("A=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := handlerWithStacksDir(t, dir)
+
+	// Load the file → capture the base hash the editor would hold.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/stacks/web/env", nil))
+	var loaded envFileResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil || loaded.Sha256 == "" {
+		t.Fatalf("load: %v (sha=%q)", err, loaded.Sha256)
+	}
+
+	// Someone edits the file out of band (e.g. over SSH).
+	if err := os.WriteFile(envPath, []byte("A=2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	put := func(content, base string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"content": content, "baseSha256": base})
+		req := httptest.NewRequest(http.MethodPut, "/api/stacks/web/env", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Saving against the stale hash is refused with 409 + the on-disk version.
+	rec = put("A=99\n", loaded.Sha256)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale save = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
+	}
+	var conflict struct{ Content, Sha256 string }
+	json.Unmarshal(rec.Body.Bytes(), &conflict)
+	if conflict.Content != "A=2\n" || conflict.Sha256 == "" {
+		t.Fatalf("conflict = %+v, want on-disk A=2 with a hash", conflict)
+	}
+
+	// Re-saving against the fresh hash (the "overwrite" path) succeeds.
+	if rec := put("A=99\n", conflict.Sha256); rec.Code != http.StatusOK {
+		t.Fatalf("overwrite save = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if final, _ := os.ReadFile(envPath); string(final) != "A=99\n" {
+		t.Errorf("final = %q, want A=99", final)
 	}
 }
 
