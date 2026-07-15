@@ -88,7 +88,7 @@ func (a *api) renameStack(w http.ResponseWriter, r *http.Request) {
 	}
 	newName := strings.TrimSpace(body.NewName)
 	if !stackNamePattern.MatchString(newName) {
-		writeError(w, http.StatusBadRequest, "invalid stack name: use letters, digits, dot, dash or underscore (max 64)")
+		writeError(w, http.StatusBadRequest, invalidStackName)
 		return
 	}
 	if newName == name {
@@ -156,14 +156,18 @@ func (a *api) renameStack(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, createStackResponse{Name: newName, Dir: newDir, ComposeFile: composeFile})
 }
 
-// childOfStacksDir validates that dir is a direct child of STACKS_DIR and
-// returns its cleaned absolute path. Defense in depth against path escapes.
+// childOfStacksDir validates that dir is a direct child of STACKS_DIR — with
+// symlinks resolved on both sides (§4.2), so a symlinked stack directory can't
+// point the rename/delete at a path outside the tree — and returns its real
+// absolute path. Defense in depth against path escapes.
 func (a *api) childOfStacksDir(dir string) (string, error) {
-	root, err := filepath.Abs(a.cfg.StacksDir)
+	root, err := filepath.EvalSymlinks(a.cfg.StacksDir)
 	if err != nil {
-		return "", err
+		if root, err = filepath.Abs(a.cfg.StacksDir); err != nil {
+			return "", err
+		}
 	}
-	abs, err := filepath.Abs(dir)
+	abs, err := stacks.Contained(a.cfg.StacksDir, dir)
 	if err != nil {
 		return "", err
 	}

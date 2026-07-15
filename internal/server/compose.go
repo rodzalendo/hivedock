@@ -44,13 +44,32 @@ func (a *api) managedComposeFile(w http.ResponseWriter, r *http.Request) (st sta
 	return st, true
 }
 
+// containedPath resolves p (a file or dir belonging to a stack) with symlinks
+// and requires it to stay inside STACKS_DIR (§4.2). It writes a 400 and returns
+// ok=false on escape, so a compose/.env that symlinks out of the tree is refused
+// even though the scanner would otherwise follow it. The real (resolved) path is
+// what callers should read/write.
+func (a *api) containedPath(w http.ResponseWriter, p string) (string, bool) {
+	real, err := stacks.Contained(a.cfg.StacksDir, p)
+	if err != nil {
+		a.logger.Warn("path containment refused", "path", p, "err", err)
+		writeError(w, http.StatusBadRequest, "refusing to access a path outside the stacks directory")
+		return "", false
+	}
+	return real, true
+}
+
 // getCompose returns the raw compose file text for a managed stack.
 func (a *api) getCompose(w http.ResponseWriter, r *http.Request) {
 	st, ok := a.managedComposeFile(w, r)
 	if !ok {
 		return
 	}
-	data, err := os.ReadFile(st.ComposeFile)
+	real, ok := a.containedPath(w, st.ComposeFile)
+	if !ok {
+		return
+	}
+	data, err := os.ReadFile(real)
 	if err != nil {
 		a.logger.Error("compose: read file", "path", st.ComposeFile, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to read compose file: "+err.Error())
@@ -89,12 +108,16 @@ func (a *api) putCompose(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	real, ok := a.containedPath(w, st.ComposeFile)
+	if !ok {
+		return
+	}
 	// Validate before touching disk — a bad draft must never clobber the file.
 	if err := compose.Validate(r.Context(), st.Dir, content); err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := atomicWrite(st.ComposeFile, content); err != nil {
+	if err := atomicWrite(real, content); err != nil {
 		a.logger.Error("compose: write file", "path", st.ComposeFile, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to save compose file: "+err.Error())
 		return

@@ -8,12 +8,19 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
 // stackNamePattern constrains a new stack's directory name to a single, safe
-// path segment: starts alphanumeric, then alphanumerics plus . _ -, max 64. No
-// separators and no way to spell "..", so it can't escape STACKS_DIR.
-var stackNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+// path segment: lowercase alphanumerics plus dash/underscore, max 64, starting
+// alphanumeric. This mirrors Docker Compose's own project-name rule, and has no
+// separators, dots, or way to spell "..", so it can't escape STACKS_DIR
+// (HARDENING.md §4.1).
+var stackNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
+
+// invalidStackName is the shared rejection message for create and rename.
+const invalidStackName = "invalid stack name: use lowercase letters, digits, dash or underscore, starting with a letter or digit (max 64)"
 
 // composeTemplate is the starter compose.yaml written for a new stack. It is
 // valid and deployable as-is (nginx), but meant to be edited on the Compose tab.
@@ -45,7 +52,7 @@ func (a *api) createStack(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(body.Name)
 	if !stackNamePattern.MatchString(name) {
-		writeError(w, http.StatusBadRequest, "invalid stack name: use letters, digits, dot, dash or underscore (max 64)")
+		writeError(w, http.StatusBadRequest, invalidStackName)
 		return
 	}
 
@@ -56,9 +63,14 @@ func (a *api) createStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir := filepath.Join(root, name)
-	// Defense in depth: the resolved dir must be a direct child of the root.
+	// Defense in depth: the resolved dir must be a direct child of the root, and
+	// must not resolve (via a symlinked root) outside STACKS_DIR (§4.2).
 	if filepath.Dir(dir) != root {
-		writeError(w, http.StatusBadRequest, "invalid stack name")
+		writeError(w, http.StatusBadRequest, invalidStackName)
+		return
+	}
+	if _, err := stacks.Contained(a.cfg.StacksDir, dir); err != nil {
+		writeError(w, http.StatusBadRequest, invalidStackName)
 		return
 	}
 

@@ -21,7 +21,10 @@ func (a *api) getEnv(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	path := filepath.Join(st.Dir, ".env")
+	path, ok := a.containedPath(w, filepath.Join(st.Dir, ".env"))
+	if !ok {
+		return
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		writeJSON(w, http.StatusOK, envFileResponse{Path: path, Content: "", Exists: false})
@@ -48,7 +51,10 @@ func (a *api) putEnv(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	path := filepath.Join(st.Dir, ".env")
+	path, ok := a.containedPath(w, filepath.Join(st.Dir, ".env"))
+	if !ok {
+		return
+	}
 	if err := atomicWrite(path, content); err != nil {
 		a.logger.Error("env: write file", "path", path, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to save .env: "+err.Error())
