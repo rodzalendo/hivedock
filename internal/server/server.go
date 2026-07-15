@@ -103,6 +103,7 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Post("/system/prune", api.prune)
 			r.Get("/settings", api.settings)
 			r.Put("/settings", api.updateSettings)
+			r.Post("/settings/git-init", api.gitInit)
 			r.Get("/app/update", api.appUpdate)
 			r.Post("/app/update", api.selfUpdate)
 			r.Get("/updates", api.listUpdates)

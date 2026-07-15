@@ -4,6 +4,8 @@ import {
   fetchSettings,
   saveSettings,
   pruneSystem,
+  initGitRepo,
+  type Settings as SettingsData,
   type UpdateMode,
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
@@ -33,6 +35,8 @@ export default function Settings() {
       <IntervalSection current={data.checkInterval} onSaved={refetch} />
 
       <UpdateModeSection current={data.updateMode} onSaved={refetch} />
+
+      <GitSection data={data} onSaved={refetch} />
 
       <PruneSection />
 
@@ -219,6 +223,98 @@ function UpdateModeSection({
         </button>
         {note && <span className="text-xs text-zinc-500">{note}</span>}
       </div>
+    </section>
+  );
+}
+
+// GitSection controls the opt-in local audit trail (§5.4): when on, HiveDock
+// commits every change under the stacks directory (its own writes and out-of-
+// band ones) to a local git repo — no remotes, no push. Requires STACKS_DIR to
+// be a git worktree; offers a one-click init when it isn't.
+function GitSection({
+  data,
+  onSaved,
+}: {
+  data: SettingsData;
+  onSaved: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function onInit() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await initGitRepo();
+      onSaved();
+      setNote("Initialized. Turn on version history to start recording changes.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to initialize.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onToggle(next: boolean) {
+    setBusy(true);
+    setNote(null);
+    try {
+      await saveSettings({ gitAutoCommit: next });
+      onSaved();
+      setNote(next ? "On — changes are now committed locally." : "Off.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        Version history
+        <HelpTip>
+          Records every change under your stacks directory to a local git repo —
+          HiveDock&apos;s own edits and changes made outside the UI alike. Local
+          only: no remotes, no pushing. Useful for auditing and rollback.
+        </HelpTip>
+      </h3>
+      {data.gitWorktree ? (
+        <label className="flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={data.gitAutoCommit}
+            disabled={busy}
+            onChange={(e) => void onToggle(e.target.checked)}
+            className="mt-0.5 accent-accent-600"
+          />
+          <span>
+            <span className="text-sm text-zinc-200">
+              Commit stack changes to git
+            </span>
+            <span className="block text-[11px] leading-relaxed text-zinc-500">
+              A snapshot commit captures any out-of-band change first, then each
+              HiveDock write is its own commit (authored “HiveDock”).
+            </span>
+          </span>
+        </label>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            Your stacks directory{" "}
+            <code className="font-mono text-zinc-400">{data.stacksDir}</code> is
+            not a git repository yet.
+          </p>
+          <button
+            onClick={onInit}
+            disabled={busy}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {busy ? "Initializing…" : "Initialize git repository"}
+          </button>
+        </div>
+      )}
+      {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}
     </section>
   );
 }

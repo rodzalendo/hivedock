@@ -130,9 +130,18 @@ func (a *api) putCompose(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
+	action := "save " + st.Name + " compose"
+	if !a.gitSnapshotBefore(w, action) {
+		return
+	}
 	if err := atomicWrite(real, content); err != nil {
 		a.logger.Error("compose: write file", "path", st.ComposeFile, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to save compose file: "+err.Error())
+		return
+	}
+	if err := a.gitCommitAfter(action); err != nil {
+		a.logger.Error("compose: git commit", "err", err)
+		writeError(w, http.StatusInternalServerError, "saved, but the git commit failed: "+err.Error())
 		return
 	}
 	a.logger.Info("compose saved", "stack", st.Name, "path", st.ComposeFile, "bytes", len(content))

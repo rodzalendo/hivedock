@@ -60,9 +60,18 @@ func (a *api) putEnv(w http.ResponseWriter, r *http.Request) {
 	if !a.checkOptimisticLock(w, path, baseSha) {
 		return
 	}
+	action := "save " + st.Name + " .env"
+	if !a.gitSnapshotBefore(w, action) {
+		return
+	}
 	if err := atomicWrite(path, content); err != nil {
 		a.logger.Error("env: write file", "path", path, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to save .env: "+err.Error())
+		return
+	}
+	if err := a.gitCommitAfter(action); err != nil {
+		a.logger.Error("env: git commit", "err", err)
+		writeError(w, http.StatusInternalServerError, "saved, but the git commit failed: "+err.Error())
 		return
 	}
 	a.logger.Info("env saved", "stack", st.Name, "path", path, "bytes", len(content))

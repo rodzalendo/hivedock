@@ -539,6 +539,8 @@ export interface Settings {
   publicHost: string;
   authMode: string;
   updateMode: UpdateMode;
+  gitAutoCommit: boolean; // §5.4 local audit trail of stack changes
+  gitWorktree: boolean; // whether STACKS_DIR is a git repo (else offer to init)
   version: string;
 }
 
@@ -550,8 +552,16 @@ export const fetchSettings = () => getJSON<Settings>("/api/settings");
 export async function saveSettings(patch: {
   checkInterval?: string;
   updateMode?: UpdateMode;
+  gitAutoCommit?: boolean;
 }): Promise<Settings> {
   const res = await mutate("/api/settings", "PUT", patch);
+  return (await res.json()) as Settings;
+}
+
+// initGitRepo initializes STACKS_DIR as a git repo so version history can be
+// enabled (§5.4). Returns the refreshed settings.
+export async function initGitRepo(): Promise<Settings> {
+  const res = await mutate("/api/settings/git-init", "POST");
   return (await res.json()) as Settings;
 }
 

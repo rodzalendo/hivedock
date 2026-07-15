@@ -30,7 +30,8 @@ FROM ghcr.io/sigstore/cosign/cosign:v2.4.3@sha256:c77247c92f4dfea851c70555738226
 # --- Stage 3: runtime -------------------------------------------------------
 FROM alpine:3.20
 # docker-cli + compose plugin: Hivedock shells out to `docker compose`.
-RUN apk add --no-cache docker-cli docker-cli-compose ca-certificates tzdata
+# git: optional local audit trail of stack changes (opt-in, §5.4).
+RUN apk add --no-cache docker-cli docker-cli-compose git ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/hivedock /usr/local/bin/hivedock
 # cosign is a static Go binary — runs on alpine/musl as-is.

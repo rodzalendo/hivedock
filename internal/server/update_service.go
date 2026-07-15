@@ -98,9 +98,18 @@ func (a *api) updateService(w http.ResponseWriter, r *http.Request) {
 	if !a.checkOptimisticLock(w, real, body.BaseSha256) {
 		return
 	}
+	gitAction := "update " + st.Name + "/" + service + " to " + body.Tag
+	if !a.gitSnapshotBefore(w, gitAction) {
+		return
+	}
 	if err := atomicWrite(real, updated); err != nil {
 		a.logger.Error("update service: write compose", "path", st.ComposeFile, "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to save compose file: "+err.Error())
+		return
+	}
+	if err := a.gitCommitAfter(gitAction); err != nil {
+		a.logger.Error("update service: git commit", "err", err)
+		writeError(w, http.StatusInternalServerError, "updated, but the git commit failed: "+err.Error())
 		return
 	}
 	a.logger.Info("service image updated", "stack", st.Name, "service", service, "tag", body.Tag)
