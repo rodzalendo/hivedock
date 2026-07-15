@@ -1,19 +1,37 @@
 version: 2
 updates:
-  # Go modules — pinned to the Go 1.23 transitive set on purpose (see go.mod);
-  # review carefully before merging a Docker SDK / otel bump.
+  # Go modules — the transitive set is pinned to stay on Go 1.23 (see go.mod):
+  # bumping the Docker SDK, otel, or the golang.org/x deps pulls a Go 1.24/1.25
+  # requirement and breaks the build. So we ignore those deps entirely and skip
+  # all majors, and let safe minor/patch bumps of everything else through. When
+  # we deliberately move the Go toolchain, lift these.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "github.com/docker/docker"
+      - dependency-name: "github.com/docker/go-connections"
+      - dependency-name: "go.opentelemetry.io/*"
+      - dependency-name: "golang.org/x/crypto"
+      - dependency-name: "golang.org/x/sys"
+      - dependency-name: "golang.org/x/time"
+      - dependency-name: "modernc.org/sqlite"
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
-  # Frontend dependencies.
+  # Frontend dependencies — take minor/patch automatically; majors (TypeScript,
+  # Vite, React …) are breaking migrations we tackle deliberately, not on a bot's
+  # schedule.
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions (kept current; the release workflow signs images).
   - package-ecosystem: github-actions
