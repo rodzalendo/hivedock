@@ -120,6 +120,7 @@ export default function App() {
       </aside>
 
       <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
+        <SystemBanner />
         <ErrorBoundary resetKey={view}>
           {view === "home" && <Dashboard />}
           {view === "stacks" && <Stacks />}
@@ -127,6 +128,39 @@ export default function App() {
           {view === "settings" && <Settings />}
         </ErrorBoundary>
       </main>
+    </div>
+  );
+}
+
+// SystemBanner surfaces boot-time environment problems (§6.3/§6.4): a STACKS_DIR
+// bind mismatch (which puts HiveDock in read-only mode) or an unsupported runtime
+// (Podman / rootless Docker). Shares the health query with the sidebar footer.
+function SystemBanner() {
+  const { data } = useQuery({
+    queryKey: ["health"],
+    queryFn: fetchHealth,
+    refetchInterval: 30_000,
+  });
+  const warnings = data?.warnings ?? [];
+  if (warnings.length === 0) return null;
+  const readOnly = !!data?.readOnly;
+  return (
+    <div
+      role="alert"
+      className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+        readOnly
+          ? "border-red-500/40 bg-red-500/10 text-red-200"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+      }`}
+    >
+      <p className="font-medium">
+        {readOnly ? "Read-only mode — action needed" : "Heads up"}
+      </p>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-[13px] leading-relaxed">
+        {warnings.map((w, i) => (
+          <li key={i}>{w}</li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -6,6 +6,8 @@ export interface Health {
   version: string;
   stacksDir: string;
   time: string;
+  readOnly?: boolean; // a boot check put HiveDock in read-only mode
+  warnings?: string[]; // podman/rootless/bind-mismatch notices (§6.3/§6.4)
 }
 
 export type Origin = "managed" | "external";

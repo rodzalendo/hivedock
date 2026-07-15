@@ -68,6 +68,10 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 	// First-run: bootstrap the admin from env, or mint a one-time setup token.
 	api.initFirstRun()
 
+	// Boot-time environment checks: runtime detection + STACKS_DIR bind parity
+	// (§6.3/§6.4). May put the server in read-only mode.
+	api.runSystemChecks(ctx)
+
 	// Periodic background update checks (settings override CHECK_INTERVAL;
 	// cadence changes apply live).
 	api.startUpdateScheduler(ctx)
@@ -82,9 +86,11 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.With(api.requireAuth).Post("/logout", api.authLogout)
 		})
 
-		// Everything else requires a session or a trusted-proxy header.
+		// Everything else requires a session or a trusted-proxy header. When a
+		// boot check put the server in read-only mode, unsafe methods are refused.
 		r.Group(func(r chi.Router) {
 			r.Use(api.requireAuth)
+			r.Use(api.enforceReadOnly)
 			r.Get("/ws", api.websocket)
 			r.Get("/stacks", api.listStacks)
 			r.Post("/stacks", api.createStack)
@@ -150,6 +156,11 @@ type api struct {
 
 	setupMu    sync.Mutex // guards setupToken
 	setupToken string     // one-time first-run token ("" once setup completes / when bootstrapped)
+
+	// Boot-time system-check results (§6.3/§6.4), set once before serving and
+	// read without a lock thereafter.
+	systemWarnings []string // podman/rootless/bind-mismatch notices for the UI banner
+	readOnlyReason string   // non-empty → mutations refused (STACKS_DIR bind mismatch)
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {
@@ -157,10 +168,12 @@ func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {
 }
 
 type healthResponse struct {
-	Status    string `json:"status"`
-	Version   string `json:"version"`
-	StacksDir string `json:"stacksDir"`
-	Time      string `json:"time"`
+	Status    string   `json:"status"`
+	Version   string   `json:"version"`
+	StacksDir string   `json:"stacksDir"`
+	Time      string   `json:"time"`
+	ReadOnly  bool     `json:"readOnly,omitempty"`
+	Warnings  []string `json:"warnings,omitempty"`
 }
 
 func (a *api) health(w http.ResponseWriter, r *http.Request) {
@@ -169,6 +182,8 @@ func (a *api) health(w http.ResponseWriter, r *http.Request) {
 		Version:   version,
 		StacksDir: a.cfg.StacksDir,
 		Time:      time.Now().UTC().Format(time.RFC3339),
+		ReadOnly:  a.readOnlyReason != "",
+		Warnings:  a.systemWarnings,
 	})
 }
 

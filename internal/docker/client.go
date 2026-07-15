@@ -45,6 +45,51 @@ func New() (*Client, error) {
 // Close releases the underlying client.
 func (c *Client) Close() error { return c.cli.Close() }
 
+// SelfBindSource inspects the container named id (HiveDock's own container id /
+// hostname) and returns the host-side Source of the bind mounted at dest, plus
+// whether such a mount was found. Used by the invariant-4 startup self-check: the
+// source must equal dest, or compose relative-path resolution breaks (§6.3).
+func (c *Client) SelfBindSource(ctx context.Context, id, dest string) (source string, found bool, err error) {
+	insp, err := c.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return "", false, fmt.Errorf("inspect self %q: %w", id, err)
+	}
+	for _, m := range insp.Mounts {
+		if m.Destination == dest {
+			return m.Source, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// DaemonRuntime reports whether the daemon looks like rootless Docker or Podman —
+// both are unsupported and get an explicit banner rather than silent breakage
+// (§6.4). Best-effort: unknown on error.
+func (c *Client) DaemonRuntime(ctx context.Context) (rootless, podman bool) {
+	if info, err := c.cli.Info(ctx); err == nil {
+		for _, opt := range info.SecurityOptions {
+			if strings.Contains(opt, "rootless") {
+				rootless = true
+			}
+		}
+		if strings.Contains(strings.ToLower(info.Name), "podman") ||
+			strings.Contains(strings.ToLower(info.OperatingSystem), "podman") {
+			podman = true
+		}
+	}
+	if ver, err := c.cli.ServerVersion(ctx); err == nil {
+		if strings.Contains(strings.ToLower(ver.Platform.Name), "podman") {
+			podman = true
+		}
+		for _, comp := range ver.Components {
+			if strings.Contains(strings.ToLower(comp.Name), "podman") {
+				podman = true
+			}
+		}
+	}
+	return rootless, podman
+}
+
 // Ping verifies the daemon is reachable.
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.cli.Ping(ctx)
