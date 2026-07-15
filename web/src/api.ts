@@ -459,18 +459,44 @@ export async function setImageIgnore(
   await mutate("/api/updates/ignore", "PUT", { image, ignored });
 }
 
-// updateService rewrites a service's image tag in its compose file (comment-
-// preserving). Save ≠ deploy — deploy the stack separately to apply.
-export async function updateService(
+export interface UpdateRewrite {
+  stack: string;
+  service: string;
+  tag: string;
+  changed: boolean;
+  preview?: boolean;
+  diff?: string; // unified diff of the compose change (preview only)
+  sha256: string; // base hash to lock the apply to (§5.1/§5.2)
+}
+
+const updateURL = (stack: string, service: string) =>
+  `/api/stacks/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/update`;
+
+// previewUpdate computes the compose tag rewrite and returns its unified diff
+// without writing anything (§5.2). changed:false means the file is already at tag.
+export async function previewUpdate(
   stack: string,
   service: string,
   tag: string,
-): Promise<void> {
-  await mutate(
-    `/api/stacks/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/update`,
-    "POST",
-    { tag },
-  );
+): Promise<UpdateRewrite> {
+  const res = await mutate(updateURL(stack, service), "POST", { tag });
+  return (await res.json()) as UpdateRewrite;
+}
+
+// applyUpdate writes the previewed rewrite, but only if the file still matches
+// baseSha256 (optimistic lock); a 409 throws with the server's message.
+export async function applyUpdate(
+  stack: string,
+  service: string,
+  tag: string,
+  baseSha256: string,
+): Promise<UpdateRewrite> {
+  const res = await mutate(updateURL(stack, service), "POST", {
+    tag,
+    confirm: true,
+    baseSha256,
+  });
+  return (await res.json()) as UpdateRewrite;
 }
 
 // checkUpdates triggers a registry check across all managed-stack images. The

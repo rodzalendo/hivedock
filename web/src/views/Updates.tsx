@@ -3,13 +3,25 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUpdates,
   checkUpdates,
-  updateService,
+  previewUpdate,
+  applyUpdate,
   runStackAction,
   setImageIgnore,
   type UpdateEntry,
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
+
+// One planned compose rewrite awaiting the user's confirmation in the review
+// modal — the diff to show and the base hash to lock the apply to (§5.2).
+type PlannedEdit = {
+  stack: string;
+  service: string;
+  image: string;
+  tag: string;
+  diff: string;
+  sha256: string;
+};
 
 const diffColor: Record<string, string> = {
   major: "bg-red-500/15 text-red-400",
@@ -27,6 +39,8 @@ export default function Updates() {
   const [note, setNote] = useState<string | null>(null);
   const [applyingImages, setApplyingImages] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // The pending review: compose diffs to confirm before anything is written.
+  const [review, setReview] = useState<PlannedEdit[] | null>(null);
 
   // A completed check (updates:changed) clears the checking state and any
   // in-flight "applying" rows — the re-check after an update is what confirms
@@ -163,35 +177,66 @@ export default function Updates() {
     }
   }
 
-  // Rewrite every selected update's compose files, redeploy each affected stack
-  // once (a single `up` picks up all changed services in that stack), then
-  // re-check to refresh status. The rows stay in "applying" state (spinner)
-  // until the re-check's updates:changed event lands — that's when the new
-  // state is actually confirmed — with a timeout as a safety net.
-  async function applyMany(list: UpdateEntry[]) {
+  // Step 1: gather the exact compose diffs for every selected update WITHOUT
+  // writing anything, and open the review modal (§5.2). Nothing touches disk
+  // until the user confirms.
+  async function reviewMany(list: UpdateEntry[]) {
     const targets = list.filter((e) => e.kind === "semver" && e.candidate);
     if (targets.length === 0 || busy) return;
-    setApplyingImages(new Set(targets.map((e) => e.image)));
+    setNote(null);
+    try {
+      const edits: PlannedEdit[] = [];
+      for (const e of targets) {
+        for (const u of e.usedBy) {
+          const p = await previewUpdate(u.stack, u.service, e.candidate!);
+          if (p.changed && p.diff) {
+            edits.push({
+              stack: u.stack,
+              service: u.service,
+              image: e.image,
+              tag: e.candidate!,
+              diff: p.diff,
+              sha256: p.sha256,
+            });
+          }
+        }
+      }
+      if (edits.length === 0) {
+        setNote("Selected images are already at the target tag.");
+        return;
+      }
+      setReview(edits);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Couldn't prepare the update.");
+    }
+  }
+
+  // Step 2: the user confirmed the diffs. Apply each rewrite (locked to the hash
+  // captured at preview), then redeploy each affected stack once and re-check.
+  async function confirmReview() {
+    if (!review || busy) return;
+    const edits = review;
+    setReview(null);
+    setApplyingImages(new Set(edits.map((e) => e.image)));
     setNote(null);
     try {
       const stacks = new Set<string>();
-      for (const e of targets) {
-        for (const u of e.usedBy) {
-          await updateService(u.stack, u.service, e.candidate!);
-          stacks.add(u.stack);
-        }
+      for (const e of edits) {
+        await applyUpdate(e.stack, e.service, e.tag, e.sha256);
+        stacks.add(e.stack);
       }
       for (const s of stacks) {
         await runStackAction(s, "up");
       }
       setNote(
-        `Updating ${targets.length} image${targets.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
+        `Updating ${edits.length} image${edits.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
       );
       setSelected(new Set());
       await checkUpdates();
       // Cleared by the updates:changed event; never spin forever.
       window.setTimeout(() => setApplyingImages(new Set()), 180_000);
     } catch (err) {
+      // A 409 here means the file changed on disk between preview and apply.
       setNote(err instanceof Error ? err.message : "Update failed.");
       setApplyingImages(new Set());
     }
@@ -199,6 +244,13 @@ export default function Updates() {
 
   return (
     <div className="space-y-5">
+      {review && (
+        <ReviewModal
+          edits={review}
+          onCancel={() => setReview(null)}
+          onConfirm={() => void confirmReview()}
+        />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
@@ -287,7 +339,7 @@ export default function Updates() {
                 </label>
                 <button
                   onClick={() =>
-                    applyMany(applicable.filter((e) => selected.has(e.image)))
+                    reviewMany(applicable.filter((e) => selected.has(e.image)))
                   }
                   disabled={busy || selected.size === 0}
                   className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
@@ -295,7 +347,7 @@ export default function Updates() {
                   Update selected ({selected.size})
                 </button>
                 <button
-                  onClick={() => applyMany(applicable)}
+                  onClick={() => reviewMany(applicable)}
                   disabled={busy}
                   className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
                 >
@@ -313,7 +365,7 @@ export default function Updates() {
                 onToggle={() => toggle(e.image)}
                 onApply={
                   e.kind === "semver" && e.candidate
-                    ? () => applyMany([e])
+                    ? () => reviewMany([e])
                     : e.kind === "digest"
                       ? () => applyDigest(e)
                       : undefined
@@ -589,4 +641,80 @@ function StatusChip({ entry }: { entry: UpdateEntry }) {
       {label}
     </span>
   );
+}
+
+// ReviewModal shows the exact compose diffs a batch update will write, before
+// anything touches disk (§5.2). Diffs render as text nodes (no innerHTML).
+function ReviewModal({
+  edits,
+  onCancel,
+  onConfirm,
+}: {
+  edits: PlannedEdit[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const stacks = new Set(edits.map((e) => e.stack)).size;
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-zinc-800 px-5 py-3">
+          <h3 className="text-sm font-semibold text-zinc-100">
+            Review {edits.length} change{edits.length === 1 ? "" : "s"}
+          </h3>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            HiveDock will rewrite the image tag in{" "}
+            {edits.length === 1 ? "this compose file" : "these compose files"}{" "}
+            (comments and formatting preserved), then redeploy {stacks} stack
+            {stacks === 1 ? "" : "s"}. Nothing is written until you apply.
+          </p>
+        </div>
+        <div className="space-y-3 overflow-auto px-5 py-4">
+          {edits.map((e, i) => (
+            <div key={`${e.stack}/${e.service}/${i}`}>
+              <p className="mb-1 font-mono text-[11px] text-zinc-400">
+                {e.stack}/{e.service} → {e.tag}
+              </p>
+              <pre className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-[11px] leading-relaxed">
+                {e.diff.split("\n").map((line, j) => (
+                  <div key={j} className={diffLineClass(line)}>
+                    {line || " "}
+                  </div>
+                ))}
+              </pre>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-5 py-3">
+          <button
+            onClick={onCancel}
+            className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:text-zinc-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="rounded-lg bg-hive-500 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-hive-400"
+          >
+            Apply all &amp; redeploy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// diffLineClass colors a unified-diff line: hunk header blue, adds green,
+// removes red, context muted. The +++/--- file headers fall through to add/remove.
+function diffLineClass(line: string): string {
+  if (line.startsWith("@@")) return "text-sky-400";
+  if (line.startsWith("+")) return "text-green-400";
+  if (line.startsWith("-")) return "text-red-400";
+  return "text-zinc-500";
 }
