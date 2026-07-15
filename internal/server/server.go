@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +35,13 @@ var version = "dev"
 // New builds the top-level HTTP handler. ctx bounds background loops (the
 // periodic update scheduler); cancel it to stop them.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
+	return newServer(ctx, cfg, logger, db, stacksSvc, hub, host, dockerClient, icons, dist).mux
+}
+
+// newServer wires the api and its router, returning the *api so in-package
+// tests can reach state like the first-run setup token. Callers outside the
+// package use New.
+func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) *api {
 	r := chi.NewRouter()
 	// capturePeer must run BEFORE RealIP: trusted-header auth decides trust from
 	// the real TCP peer, and RealIP overwrites RemoteAddr from X-Forwarded-For
@@ -52,7 +60,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 	}
 	checker := updates.NewChecker(registry.NewClient(nil), local, logger)
 
-	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker}
+	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker, login: newLoginLimiter()}
+
+	// First-run: bootstrap the admin from env, or mint a one-time setup token.
+	api.initFirstRun()
 
 	// Periodic background update checks (settings override CHECK_INTERVAL;
 	// cadence changes apply live).
@@ -108,7 +119,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 	// Everything else is the SPA (client-side routing → index.html fallback).
 	r.NotFound(SPAHandler(dist, logger))
 
-	return r
+	api.mux = r
+	return api
 }
 
 type api struct {
@@ -122,10 +134,15 @@ type api struct {
 	icons   *discovery.IconResolver
 	runner  *compose.Runner
 	checker *updates.Checker
+	mux     http.Handler   // the built router (returned by New)
+	login   *loginLimiter  // brute-force damper for login/setup
 
 	checking     atomic.Bool // guards against concurrent update-check runs
 	selfUpdating atomic.Bool // guards against concurrent self-updates
 	selfCheck    selfCheckCache
+
+	setupMu    sync.Mutex // guards setupToken
+	setupToken string     // one-time first-run token ("" once setup completes / when bootstrapped)
 }
 
 func (a *api) hostStats(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +202,18 @@ func peerIP(r *http.Request) string {
 		return v
 	}
 	return ""
+}
+
+// clientIP returns the best-guess client IP for rate-limiting and audit logs —
+// r.RemoteAddr after middleware.RealIP has applied X-Forwarded-For (so it's the
+// real client behind a proxy). Unlike peerIP this is advisory, not a trust
+// boundary; it only keys a brute-force damper.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // securityHeaders sets baseline browser protections on every response. The CSP

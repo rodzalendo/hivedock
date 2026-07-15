@@ -32,7 +32,10 @@ Nothing else leaves the box. If you find a connection not on this list, that's a
 
 ## Current protections
 
-- **Single-admin authentication** (bcrypt), HttpOnly session cookie, double-submit CSRF token on every mutating request, and a flat delay on failed logins to damp brute force. First-run creates the admin; there are no default credentials.
+- **Single-admin authentication** (bcrypt), HttpOnly session cookie, double-submit CSRF token on every mutating request. First-run creates the admin — there are no default credentials, and setup is gated by a one-time token printed to the container log so an unclaimed instance can't be seized by whoever reaches it first.
+- **Login brute-force damping** — failed logins are rate-limited per (username, IP) with exponential backoff (5 failures → 30 s, doubling to a 15 min cap), on top of a flat per-attempt delay and bcrypt's own cost. The unknown-username path still runs a bcrypt comparison, so timing doesn't reveal whether the account exists.
+- **Session hardening** — tokens are stored only as a SHA-256 hash (a DB read can't recover a usable cookie), rotate on each login, and expire after 7 days idle / 30 days absolute.
+- **Trusted-header (forward-auth) SSO** — optional; trust is decided by the real TCP peer against configured CIDRs, evaluated before any `X-Forwarded-For` rewriting, so the header can't be spoofed from outside the proxy network.
 - **Reads via the Docker SDK; mutations shell out to `docker compose`** with argument arrays (no shell string interpolation), each under a per-stack lock.
 - **Compose files are only ever written** on an explicit editor save or the single-line image-tag rewrite in the update flow (a targeted scalar edit — never a parse-and-dump). Env-interpolated tags are surfaced, never rewritten.
 - **Same-origin WebSocket** — the `/api/ws` upgrade is rejected unless the `Origin` matches the request host or the configured `PUBLIC_HOST`, closing cross-site WebSocket hijacking.
@@ -45,8 +48,30 @@ Being explicit beats being discovered. On the current roadmap (see `docs/HARDENI
 
 - **Self-update is not yet signature-verified.** It pulls the newest release image and recreates HiveDock's own container; cosign verification and digest-pinning of that flow are planned.
 - **No at-rest encryption** for stored settings beyond filesystem permissions.
-- **First-run setup is not yet token-gated** — on a fresh install, whoever reaches the setup screen first becomes admin. Complete setup promptly on a trusted network; a one-time log-printed setup token is planned.
 
 > **`AUTH_DISABLED` was removed.** It disabled authentication entirely and turned a socket-holding mutator into an open proxy. The container now refuses to boot if the variable is still set. Use trusted-header (forward-auth) SSO instead: set `AUTH_TRUSTED_HEADER` + `AUTH_TRUSTED_PROXY_CIDRS` behind Authelia/authentik/Caddy. The header is honored only when the request's real TCP peer is inside a configured CIDR (evaluated before `X-Forwarded-For` rewriting), so it cannot be spoofed from outside your proxy network.
 
 If any of these blocks your use case, run behind a proxy that adds the missing control, and watch the releases.
+
+## fail2ban
+
+Failed logins log a fixed line you can ban on. HiveDock logs JSON; a filter (`/etc/fail2ban/filter.d/hivedock.conf`):
+
+```ini
+[Definition]
+failregex = "msg":"auth: failed login".*"ip":"<HOST>"
+datepattern = "time":"%%Y-%%m-%%dT%%H:%%M:%%S
+```
+
+Jail (`/etc/fail2ban/jail.d/hivedock.conf`), pointing at the container log (e.g. via `docker logs` shipped to a file, or journald):
+
+```ini
+[hivedock]
+enabled  = true
+filter   = hivedock
+maxretry = 5
+findtime = 15m
+bantime  = 1h
+```
+
+HiveDock's own per-(user, IP) backoff already damps brute force; fail2ban adds a network-level ban when you want it.

@@ -20,8 +20,10 @@ import (
 	"github.com/rogalinski/hivedock/internal/store"
 )
 
-// authTestHandler builds a handler with a real store and auth ENABLED.
-func authTestHandler(t *testing.T) http.Handler {
+// authTestServer builds a server with a real store and password auth (no
+// trusted header). Returns the *api so tests can read the first-run setup
+// token; use s.mux as the handler.
+func authTestServer(t *testing.T) *api {
 	t.Helper()
 	stacksDir := t.TempDir()
 	db, err := store.Open(t.TempDir())
@@ -37,7 +39,7 @@ func authTestHandler(t *testing.T) http.Handler {
 	icons := discovery.NewIconResolver(t.TempDir(), func(context.Context, string) ([]byte, string, bool) {
 		return nil, "", false
 	})
-	return New(context.Background(), cfg, logger, db, stacksSvc, hub, host, nil, icons, fstest.MapFS{})
+	return newServer(context.Background(), cfg, logger, db, stacksSvc, hub, host, nil, icons, fstest.MapFS{})
 }
 
 func postJSON(t *testing.T, h http.Handler, path string, body any) *httptest.ResponseRecorder {
@@ -64,7 +66,7 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 }
 
 func TestAuthGuardsProtectedRoutes(t *testing.T) {
-	h := authTestHandler(t)
+	h := authTestServer(t).mux
 
 	// Protected route with no session -> 401.
 	req := httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
@@ -84,7 +86,12 @@ func TestAuthGuardsProtectedRoutes(t *testing.T) {
 }
 
 func TestAuthSetupLoginFlow(t *testing.T) {
-	h := authTestHandler(t)
+	s := authTestServer(t)
+	h := s.mux
+	token := s.setupToken
+	if token == "" {
+		t.Fatal("expected a first-run setup token")
+	}
 
 	// Initially needs setup.
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
@@ -96,14 +103,20 @@ func TestAuthSetupLoginFlow(t *testing.T) {
 		t.Fatalf("initial status = %+v, want needsSetup && !authenticated", st)
 	}
 
-	// Setup with too-short password -> 400.
-	rec = postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "short"})
+	// Setup without the token -> 403.
+	rec = postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("tokenless setup = %d, want 403", rec.Code)
+	}
+
+	// Setup with too-short password (token valid) -> 400.
+	rec = postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "short", "token": token})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("weak-password setup = %d, want 400", rec.Code)
 	}
 
 	// Proper setup -> 200 + session cookies.
-	rec = postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass"})
+	rec = postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass", "token": token})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("setup = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -144,6 +157,30 @@ func TestAuthSetupLoginFlow(t *testing.T) {
 	rec = postJSON(t, h, "/api/auth/login", map[string]string{"username": "admin", "password": "hunter2!pass"})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("good login = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLoginRateLimited(t *testing.T) {
+	s := authTestServer(t)
+	h := s.mux
+	rec := postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass", "token": s.setupToken})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup: %d", rec.Code)
+	}
+
+	// Threshold bad logins each return 401; the next is blocked with 429.
+	for i := 0; i < loginFailThreshold; i++ {
+		rec = postJSON(t, h, "/api/auth/login", map[string]string{"username": "admin", "password": "wrong"})
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("bad login #%d = %d, want 401", i+1, rec.Code)
+		}
+	}
+	rec = postJSON(t, h, "/api/auth/login", map[string]string{"username": "admin", "password": "wrong"})
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("blocked login = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("429 response should carry Retry-After")
 	}
 }
 
@@ -230,8 +267,9 @@ func TestTrustedHeaderAuth(t *testing.T) {
 }
 
 func TestCSRFRequiredForMutations(t *testing.T) {
-	h := authTestHandler(t)
-	rec := postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass"})
+	s := authTestServer(t)
+	h := s.mux
+	rec := postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass", "token": s.setupToken})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("setup failed: %d", rec.Code)
 	}

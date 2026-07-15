@@ -144,6 +144,8 @@ Everything is configured with environment variables:
 | `PUBLIC_HOST` | request host | Host used to build the dashboard's app links, e.g. `192.168.1.50:5001`. Set it to a static IP or hostname so links don't rot. |
 | `AUTH_TRUSTED_HEADER` | unset | Forward-auth (SSO) header carrying the authenticated user, e.g. `Remote-User`. Enables trusted-header auth when set together with the CIDRs below. |
 | `AUTH_TRUSTED_PROXY_CIDRS` | unset | Comma-separated CIDRs of your auth proxy. The header is honored only when the direct TCP peer is inside one of them. |
+| `ADMIN_USER` | unset | Non-interactive first-run admin username (with `ADMIN_PASSWORD_FILE`). Consumed only when no admin exists; ignored after. |
+| `ADMIN_PASSWORD_FILE` | unset | Path to a file holding the bootstrap admin password (for CI/scripted installs). |
 | `CHECK_INTERVAL` | `30m` | Background update-check cadence. `off` disables it; also editable live in Settings. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
@@ -151,7 +153,9 @@ Everything is configured with environment variables:
 
 ### Auth
 
-A single admin account (bcrypt) is created on first run. Sessions are an HttpOnly cookie and survive restarts; every mutating request is CSRF-protected and login failures are rate-damped.
+A single admin account (bcrypt) is created on first run. To stop a stranger who reaches a fresh install first from claiming it, setup requires a **one-time token printed to the container log** — grab it with `docker logs hivedock` (look for `setup_token`). For CI/scripted installs, set `ADMIN_USER` + `ADMIN_PASSWORD_FILE` to create the admin non-interactively instead.
+
+Sessions are an HttpOnly cookie (stored server-side as a SHA-256 hash, with a 7-day idle and 30-day absolute expiry) and survive restarts; every mutating request is CSRF-protected, and failed logins are rate-limited per (user, IP) with exponential backoff.
 
 For SSO without a second login, put HiveDock behind a forward-auth proxy (Authelia, authentik, Caddy `forward_auth`) and set `AUTH_TRUSTED_HEADER` to the header it injects (e.g. `Remote-User`) plus `AUTH_TRUSTED_PROXY_CIDRS` to the proxy's network. The header is trusted **only** when the request's real TCP peer is inside one of those CIDRs (checked before any `X-Forwarded-For` rewriting), so it can't be spoofed from outside.
 

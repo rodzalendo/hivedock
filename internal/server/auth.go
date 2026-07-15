@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -161,24 +163,54 @@ func (a *api) authStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // authSetup performs first-run admin creation, then logs the new admin in.
+// While a one-time setup token is active (no admin yet, no env bootstrap), the
+// request must present it — closing the unclaimed-instance race. Rate limited.
 func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
 	if a.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "store unavailable")
 		return
 	}
-	username, password, ok := decodeCredentials(w, r)
-	if !ok {
+	ip := clientIP(r)
+	key := "setup:" + ip
+	if d := a.login.retryAfter(key); d > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
 		return
 	}
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Token    string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// One-time setup token gate (skipped once setup is done / when bootstrapped).
+	a.setupMu.Lock()
+	need := a.setupToken
+	a.setupMu.Unlock()
+	if need != "" {
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(body.Token)), []byte(need)) != 1 {
+			a.login.fail(key)
+			a.logger.Warn("auth: invalid setup token", "ip", ip)
+			time.Sleep(400 * time.Millisecond)
+			writeError(w, http.StatusForbidden, "invalid or missing setup token — see the container log (docker logs hivedock)")
+			return
+		}
+	}
+
+	username := strings.TrimSpace(body.Username)
 	if username == "" {
 		writeError(w, http.StatusBadRequest, "username is required")
 		return
 	}
-	if len(password) < auth.MinPasswordLen {
+	if len(body.Password) < auth.MinPasswordLen {
 		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
-	hash, err := auth.HashPassword(password)
+	hash, err := auth.HashPassword(body.Password)
 	if err != nil {
 		a.logger.Error("auth: hash password", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to set password")
@@ -193,6 +225,12 @@ func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create admin")
 		return
 	}
+	// Setup done: retire the token and clear the limiter.
+	a.setupMu.Lock()
+	a.setupToken = ""
+	a.setupMu.Unlock()
+	a.login.reset(key)
+
 	if err := a.startSession(w, r); err != nil {
 		a.logger.Error("auth: start session", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to start session")
@@ -201,7 +239,8 @@ func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authStatusResponse{Authenticated: true, Username: username})
 }
 
-// authLogin verifies credentials and establishes a session.
+// authLogin verifies credentials and establishes a session. Failures are
+// rate-limited per (username, ip) with exponential backoff.
 func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
 	if a.db == nil {
 		writeError(w, http.StatusServiceUnavailable, "store unavailable")
@@ -209,6 +248,13 @@ func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username, password, ok := decodeCredentials(w, r)
 	if !ok {
+		return
+	}
+	ip := clientIP(r)
+	key := "login:" + username + "|" + ip
+	if d := a.login.retryAfter(key); d > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
 		return
 	}
 	user, hash, err := a.db.AdminCredentials()
@@ -225,19 +271,80 @@ func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
 	// matched via response timing.
 	passwordOK := auth.CheckPassword(hash, password)
 	if username != user || !passwordOK {
-		// Flat delay on failure: with a single admin account this is a simple,
-		// state-free brute-force damper (~2.5 attempts/sec/connection at most,
-		// on top of bcrypt's own cost).
-		time.Sleep(400 * time.Millisecond)
+		a.login.fail(key)
+		// Fixed-format line for the fail2ban filter in SECURITY.md.
+		a.logger.Warn("auth: failed login", "user", username, "ip", ip)
+		time.Sleep(400 * time.Millisecond) // flat per-attempt damper on top of backoff
 		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
+	a.login.reset(key)
 	if err := a.startSession(w, r); err != nil {
 		a.logger.Error("auth: start session", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to start session")
 		return
 	}
 	writeJSON(w, http.StatusOK, authStatusResponse{Authenticated: true, Username: user})
+}
+
+// initFirstRun runs once at startup when no admin exists yet: it bootstraps the
+// admin from ADMIN_USER + ADMIN_PASSWORD_FILE if provided, otherwise mints a
+// one-time setup token and logs it (so first-run setup can't be claimed by a
+// stranger who reaches the box first).
+func (a *api) initFirstRun() {
+	if a.db == nil {
+		return
+	}
+	exists, err := a.db.AdminExists()
+	if err != nil {
+		a.logger.Error("first-run: admin check", "err", err)
+		return
+	}
+	if exists {
+		return
+	}
+	if a.cfg.AdminUser != "" && a.cfg.AdminPasswordFile != "" {
+		if a.bootstrapAdmin() {
+			return
+		}
+		// fall through to the token path on any bootstrap failure
+	}
+	tok, err := auth.NewToken()
+	if err != nil {
+		a.logger.Error("first-run: mint setup token", "err", err)
+		return
+	}
+	a.setupToken = tok
+	a.logger.Info("FIRST-RUN SETUP: create the admin account in the UI using this one-time token", "setup_token", tok)
+}
+
+// bootstrapAdmin creates the admin from ADMIN_USER + ADMIN_PASSWORD_FILE.
+// Reports success; on failure the caller falls back to the setup-token path.
+func (a *api) bootstrapAdmin() bool {
+	data, err := os.ReadFile(a.cfg.AdminPasswordFile)
+	if err != nil {
+		a.logger.Error("bootstrap admin: read ADMIN_PASSWORD_FILE", "err", err)
+		return false
+	}
+	pw := strings.TrimSpace(string(data))
+	if len(pw) < auth.MinPasswordLen {
+		a.logger.Error("bootstrap admin: password must be at least 8 characters")
+		return false
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		a.logger.Error("bootstrap admin: hash password", "err", err)
+		return false
+	}
+	if err := a.db.CreateAdmin(a.cfg.AdminUser, hash); err != nil {
+		if errors.Is(err, store.ErrAdminExists) {
+			return true
+		}
+		a.logger.Error("bootstrap admin: create", "err", err)
+		return false
+	}
+	a.logger.Info("admin bootstrapped from ADMIN_USER / ADMIN_PASSWORD_FILE", "user", a.cfg.AdminUser)
+	return true
 }
 
 // authLogout deletes the session and clears cookies. Behind requireAuth.

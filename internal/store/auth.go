@@ -1,11 +1,24 @@
 package store
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 )
+
+// sessionIdleTTL expires a session unused for this long, independent of the
+// absolute expiry the caller sets — a stolen-but-idle token has a short life.
+const sessionIdleTTL = 7 * 24 * time.Hour
+
+// hashToken returns the hex SHA-256 of a session token. Only the hash is stored,
+// so read access to the DB cannot recover a usable session cookie.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
 
 // ErrAdminExists is returned by CreateAdmin when the single admin is already
 // configured (first-run setup can happen exactly once).
@@ -52,11 +65,12 @@ func (s *Store) AdminCredentials() (username, passwordHash string, err error) {
 	return username, passwordHash, nil
 }
 
-// CreateSession records a session token with an absolute expiry.
+// CreateSession records a session (by token hash) with an absolute expiry.
 func (s *Store) CreateSession(token string, expiresAt time.Time) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.Exec(
-		`INSERT INTO sessions (token, expires_at) VALUES (?, ?)`,
-		token, expiresAt.UTC().Format(time.RFC3339),
+		`INSERT INTO sessions (token_hash, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?)`,
+		hashToken(token), now, expiresAt.UTC().Format(time.RFC3339), now,
 	)
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
@@ -64,14 +78,16 @@ func (s *Store) CreateSession(token string, expiresAt time.Time) error {
 	return nil
 }
 
-// SessionValid reports whether token names a live (unexpired) session. Expired
-// rows are opportunistically deleted on lookup.
+// SessionValid reports whether token names a live session — within both its
+// absolute expiry and the idle window (§2.4). A valid lookup slides last_seen
+// forward; an expired row is opportunistically deleted.
 func (s *Store) SessionValid(token string) (bool, error) {
 	if token == "" {
 		return false, nil
 	}
-	var expiresAt string
-	err := s.db.QueryRow(`SELECT expires_at FROM sessions WHERE token = ?`, token).Scan(&expiresAt)
+	h := hashToken(token)
+	var expiresAt, lastSeen string
+	err := s.db.QueryRow(`SELECT expires_at, last_seen FROM sessions WHERE token_hash = ?`, h).Scan(&expiresAt, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -82,24 +98,40 @@ func (s *Store) SessionValid(token string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("parse session expiry: %w", err)
 	}
-	if time.Now().After(exp) {
-		_, _ = s.db.Exec(`DELETE FROM sessions WHERE token = ?`, token)
+	seen, err := time.Parse(time.RFC3339, lastSeen)
+	if err != nil {
+		return false, fmt.Errorf("parse session last_seen: %w", err)
+	}
+	now := time.Now()
+	if now.After(exp) || now.After(seen.Add(sessionIdleTTL)) {
+		_, _ = s.db.Exec(`DELETE FROM sessions WHERE token_hash = ?`, h)
 		return false, nil
 	}
+	_, _ = s.db.Exec(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`, now.UTC().Format(time.RFC3339), h)
 	return true, nil
 }
 
 // DeleteSession removes a session (logout). Missing tokens are a no-op.
 func (s *Store) DeleteSession(token string) error {
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE token = ?`, token); err != nil {
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash = ?`, hashToken(token)); err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
 	return nil
 }
 
-// DeleteExpiredSessions purges sessions past their expiry.
+// DeleteAllSessions invalidates every session (e.g. on a password change).
+func (s *Store) DeleteAllSessions() error {
+	if _, err := s.db.Exec(`DELETE FROM sessions`); err != nil {
+		return fmt.Errorf("delete all sessions: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpiredSessions purges sessions past their absolute expiry or idle window.
 func (s *Store) DeleteExpiredSessions() error {
-	if _, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at < ?`, time.Now().UTC().Format(time.RFC3339)); err != nil {
+	now := time.Now().UTC().Format(time.RFC3339)
+	idleCut := time.Now().Add(-sessionIdleTTL).UTC().Format(time.RFC3339)
+	if _, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at < ? OR last_seen < ?`, now, idleCut); err != nil {
 		return fmt.Errorf("delete expired sessions: %w", err)
 	}
 	return nil

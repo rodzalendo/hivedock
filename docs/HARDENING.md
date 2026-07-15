@@ -13,15 +13,21 @@ merge (update both together, per house rules). `docs/PRD.md` non-goals still bin
 > `dangerouslySetInnerHTML` CI gate, `SECURITY.md` + README security section.
 >
 > **Landed (v0.4.0, Phase A core):** §2.1 `AUTH_DISABLED` removed with boot
-> refusal on a truthy value; §2.2 trusted-header forward-auth (peer-CIDR gated,
-> real TCP peer captured before `X-Forwarded-For` via `capturePeer`, CSRF skipped
-> on the header path); WS/REST both behind it; test harness migrated onto the
-> trusted-header path (dogfoods §2.2). Spoof-rejection is tested. **Still open in
-> §2:** §2.3 first-run setup token + `ADMIN_USER`/`ADMIN_PASSWORD_FILE`, §2.4
-> rate limiting + session-token hashing/rotation/expiry.
+> refusal; §2.2 trusted-header forward-auth (peer-CIDR gated, real TCP peer via
+> `capturePeer` before `X-Forwarded-For`, CSRF skipped on the header path); test
+> harness migrated onto it. Spoof-rejection tested.
 >
-> **Not yet done:** §2.3, §2.4, §3 (self-update verification), §4.1–§4.3, §4.5,
-> §4.7, §4.8, §5, §6, and `THREAT_MODEL.md`.
+> **Landed (v0.4.1, Phase A complete):** §2.3 first-run setup token (logged, gates
+> setup, cleared on completion) + `ADMIN_USER`/`ADMIN_PASSWORD_FILE` bootstrap;
+> §2.4 login rate limiting per (user, ip) with exponential backoff, SHA-256
+> session-token storage, 7d idle / 30d absolute expiry, rotation on login, and a
+> fail2ban filter in `SECURITY.md`. Migration 0008 clears old sessions (re-login
+> once). Session-invalidate-on-password-change is wired (`DeleteAllSessions`) but
+> there is no password-change endpoint yet. Remaining Phase-A polish: copy-paste
+> proxy snippets and a "disable password login" toggle (§2.2/§2.4 nice-to-haves).
+>
+> **Not yet done:** §3 (self-update verification), §4.1–§4.3, §4.5, §4.7, §4.8,
+> §5, §6, and `THREAT_MODEL.md`.
 
 ## 1. Scope
 
@@ -71,7 +77,7 @@ never `X-Forwarded-For`. A setting allows disabling password login once header
 auth is confirmed working. Docs ship copy-paste snippets for Authelia, authentik,
 and Caddy `forward_auth`.
 
-### 2.3 First-run claim protection
+### 2.3 First-run claim protection — ✅ shipped (v0.4.1)
 
 No default credentials, ever. On first boot with no admin in `settings`, the app
 serves a setup flow gated by a one-time token printed to the container log
@@ -84,7 +90,7 @@ Automation path for CI and scripted installs: `ADMIN_USER` +
 `ADMIN_PASSWORD_FILE`, consumed only when no admin exists yet and ignored ever
 after. This also replaces the dev-workflow use of `AUTH_DISABLED`.
 
-### 2.4 Sessions and login
+### 2.4 Sessions and login — ✅ shipped (v0.4.1)
 
 - Rate limiting keyed on (username, IP): five failures start a backoff at 30 s,
   doubling to a 15 min cap. The failure log line is fixed-format,

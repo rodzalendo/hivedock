@@ -235,8 +235,9 @@ export const fetchAuthStatus = () => getJSON<AuthStatus>("/api/auth/status");
 export async function setupAdmin(
   username: string,
   password: string,
+  token: string,
 ): Promise<void> {
-  await mutate("/api/auth/setup", "POST", { username, password });
+  await mutate("/api/auth/setup", "POST", { username, password, token });
 }
 
 export async function login(

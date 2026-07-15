@@ -16,6 +16,7 @@ export default function AuthScreen({
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,7 +32,7 @@ export default function AuthScreen({
     setBusy(true);
     try {
       if (isSetup) {
-        await setupAdmin(username.trim(), password);
+        await setupAdmin(username.trim(), password, token.trim());
       } else {
         await login(username.trim(), password);
       }
@@ -60,7 +61,7 @@ export default function AuthScreen({
         </h1>
         <p className="mb-6 text-sm text-zinc-500">
           {isSetup
-            ? "This is a first-run setup. Choose the single admin credentials."
+            ? "First-run setup. Choose the single admin credentials, and paste the one-time setup token from the container log."
             : "Enter your admin credentials to continue."}
         </p>
 
@@ -114,6 +115,29 @@ export default function AuthScreen({
           <p className="mb-3 text-[11px] text-zinc-600">
             Minimum 8 characters.
           </p>
+        )}
+
+        {isSetup && (
+          <label className="mb-3 block">
+            <span className="mb-1 block text-xs font-medium text-zinc-400">
+              Setup token
+            </span>
+            <input
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              required
+              placeholder="from the container log"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs outline-none focus:border-accent-500"
+            />
+            <span className="mt-1 block text-[11px] text-zinc-600">
+              Run{" "}
+              <span className="font-mono text-zinc-500">docker logs hivedock</span>{" "}
+              and copy the one-time <span className="font-mono">setup_token</span>.
+            </span>
+          </label>
         )}
 
         {error && (

@@ -28,6 +28,12 @@ type Config struct {
 	TrustedHeader     string       // AUTH_TRUSTED_HEADER — e.g. "Remote-User" ("" disables)
 	TrustedProxyCIDRs []*net.IPNet // AUTH_TRUSTED_PROXY_CIDRS — comma-separated CIDRs
 
+	// Non-interactive first-run admin bootstrap (CI/scripted installs). Consumed
+	// only when no admin exists yet, then ignored. Replaces the dev use of the
+	// removed AUTH_DISABLED.
+	AdminUser         string // ADMIN_USER — bootstrap admin username
+	AdminPasswordFile string // ADMIN_PASSWORD_FILE — path to a file holding the password
+
 	CheckInterval time.Duration // CHECK_INTERVAL — periodic update check cadence (0 disables)
 }
 
@@ -43,6 +49,9 @@ func Load() Config {
 
 		TrustedHeader:     strings.TrimSpace(env("AUTH_TRUSTED_HEADER", "")),
 		TrustedProxyCIDRs: parseCIDRs(env("AUTH_TRUSTED_PROXY_CIDRS", "")),
+
+		AdminUser:         strings.TrimSpace(env("ADMIN_USER", "")),
+		AdminPasswordFile: strings.TrimSpace(env("ADMIN_PASSWORD_FILE", "")),
 
 		CheckInterval: envDuration("CHECK_INTERVAL", 30*time.Minute),
 	}
