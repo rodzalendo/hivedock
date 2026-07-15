@@ -44,6 +44,11 @@ func (a *api) requireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// Read-only API token: valid only for allowlisted GET routes (§6.5).
+		if a.readOnlyTokenAuthorized(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if a.db == nil {
 			writeError(w, http.StatusServiceUnavailable, "store unavailable")
 			return

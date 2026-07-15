@@ -5,6 +5,8 @@ import {
   saveSettings,
   pruneSystem,
   initGitRepo,
+  generateApiToken,
+  revokeApiToken,
   type Settings as SettingsData,
   type UpdateMode,
 } from "../api";
@@ -37,6 +39,8 @@ export default function Settings() {
       <UpdateModeSection current={data.updateMode} onSaved={refetch} />
 
       <GitSection data={data} onSaved={refetch} />
+
+      <ApiTokenSection tokenSet={data.apiTokenSet} onChanged={refetch} />
 
       <PruneSection />
 
@@ -312,6 +316,104 @@ function GitSection({
           >
             {busy ? "Initializing…" : "Initialize git repository"}
           </button>
+        </div>
+      )}
+      {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}
+    </section>
+  );
+}
+
+// ApiTokenSection manages the read-only API token (§6.5) for monitoring tools.
+// The token is shown once at generation; only its hash is stored.
+function ApiTokenSection({
+  tokenSet,
+  onChanged,
+}: {
+  tokenSet: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function onGenerate() {
+    setBusy(true);
+    setNote(null);
+    try {
+      setToken(await generateApiToken());
+      onChanged();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to generate.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRevoke() {
+    setBusy(true);
+    setNote(null);
+    setToken(null);
+    try {
+      await revokeApiToken();
+      onChanged();
+      setNote("Token revoked.");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Failed to revoke.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        Read-only API token
+        <HelpTip>
+          A bearer token for monitoring tools (uptime-kuma, gatus, scripts). It
+          works only on <code>GET /api/health</code>, <code>/api/stacks</code>,
+          and <code>/api/updates</code> — never mutations or settings. Stored as
+          a hash; shown once.
+        </HelpTip>
+      </h3>
+
+      {token ? (
+        <div className="space-y-2">
+          <p className="text-[11px] text-amber-400">
+            Copy it now — it won&apos;t be shown again.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200">
+              {token}
+            </code>
+            <button
+              onClick={() => void navigator.clipboard?.writeText(token)}
+              className="rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 transition hover:bg-zinc-800"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={onGenerate}
+            disabled={busy}
+            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
+          >
+            {tokenSet ? "Regenerate token" : "Generate token"}
+          </button>
+          {tokenSet && (
+            <button
+              onClick={onRevoke}
+              disabled={busy}
+              className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:text-red-400 disabled:opacity-50"
+            >
+              Revoke
+            </button>
+          )}
+          <span className="text-[11px] text-zinc-500">
+            {tokenSet ? "A token is active." : "No token yet."}
+          </span>
         </div>
       )}
       {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}

@@ -23,6 +23,7 @@ type settingsResponse struct {
 	UpdateMode    string `json:"updateMode"`    // full | check-only | off (§3.4)
 	GitAutoCommit bool   `json:"gitAutoCommit"` // §5.4 local audit trail
 	GitWorktree   bool   `json:"gitWorktree"`   // whether STACKS_DIR is a git repo (drives the "initialize" UI)
+	APITokenSet   bool   `json:"apiTokenSet"`   // whether a read-only API token exists (§6.5)
 	Version       string `json:"version"`
 }
 
@@ -104,6 +105,7 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 		UpdateMode:    a.appUpdateMode(),
 		GitAutoCommit: a.gitAutoCommitEnabled(),
 		GitWorktree:   stacks.IsGitWorktree(a.cfg.StacksDir),
+		APITokenSet:   a.apiTokenExists(),
 		Version:       version,
 	})
 }

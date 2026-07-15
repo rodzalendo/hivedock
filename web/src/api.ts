@@ -543,6 +543,7 @@ export interface Settings {
   updateMode: UpdateMode;
   gitAutoCommit: boolean; // §5.4 local audit trail of stack changes
   gitWorktree: boolean; // whether STACKS_DIR is a git repo (else offer to init)
+  apiTokenSet: boolean; // whether a read-only API token exists (§6.5)
   version: string;
 }
 
@@ -565,6 +566,18 @@ export async function saveSettings(patch: {
 export async function initGitRepo(): Promise<Settings> {
   const res = await mutate("/api/settings/git-init", "POST");
   return (await res.json()) as Settings;
+}
+
+// generateApiToken mints a read-only API token (§6.5). The plaintext is returned
+// once and never retrievable again; regenerating replaces any previous token.
+export async function generateApiToken(): Promise<string> {
+  const res = await mutate("/api/settings/api-token", "POST");
+  return ((await res.json()) as { token: string }).token;
+}
+
+// revokeApiToken deletes the read-only API token.
+export async function revokeApiToken(): Promise<void> {
+  await mutate("/api/settings/api-token", "DELETE");
 }
 
 export const fetchHealth = () => getJSON<Health>("/api/health");
