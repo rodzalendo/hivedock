@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchHome,
@@ -957,6 +957,17 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
   const [url, setUrl] = useState(entry.url ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close the editor when clicking outside it (matches the other popovers).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
 
   async function save() {
     setBusy(true);
@@ -983,7 +994,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
         onClick={() => {
           setName(entry.name);
