@@ -5,7 +5,7 @@ Single-host Docker compose manager: Dockge-style stack management + auto-discove
 ## Stack
 
 - Backend: Go 1.23+, net/http + chi, `github.com/docker/docker/client`, SQLite via `modernc.org/sqlite` (no CGO)
-- Frontend: React 18 + TypeScript + Vite + Tailwind, in `web/`, embedded via `go:embed`
+- Frontend: React 18 + TypeScript + Vite + Tailwind, in `web/`, embedded via `go:embed`. Theming via CSS variables (six themes, `data-theme` on `<html>`, `web/src/theme.ts`); dependency-free i18n in five languages (`web/src/i18n.tsx`, `useI18n().t`)
 - Compose operations: subprocess `docker compose ...`, never a reimplementation
 - Real-time: single multiplexed WebSocket at `/api/ws`
 
@@ -41,7 +41,7 @@ Always run `task test` and `task lint` before considering a task done. Phase exi
 - Go: standard library first; justify each new dependency in the PR/commit message. Errors wrapped with `fmt.Errorf("context: %w", err)`. Table-driven tests.
 - Registry/semver logic (`internal/registry/`): every behavior change needs a test case in the real-world corpus (`internal/registry/testdata/candidates.yaml`). This code has sharp edges; tests first.
 - API: REST for request/response, WebSocket only for streams (logs, deploy output, events, stats). JSON errors: `{"error": "..."}` with correct status codes.
-- Frontend: views in `web/src/views/{Home,Stacks,Updates,Settings}`, shared components in `web/src/components`. Server state via TanStack Query; no global state library. Dark mode default.
+- Frontend: views in `web/src/views/{Home,Stacks,Updates,Settings}`, shared components in `web/src/components`. Server state via TanStack Query; no global state library. Six selectable themes (Hive Dark default) via CSS variables; user-facing strings go through `useI18n().t(key)` with the dictionaries in `web/src/i18n.tsx` (en/pl/de/es/fr) — add new copy as a key in all five languages.
 - Labels namespace: `hivedock.*` primary, `homepage.*` read as fallback (migration path — keep working).
 - Commits: conventional (`feat:`, `fix:`, `refactor:`), small and focused.
 
