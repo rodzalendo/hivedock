@@ -10,9 +10,9 @@
   <code>docker compose up -d</code> · point it at your stacks folder · done.
 </p>
 
-<!-- screenshot: add docs/screenshots/home.png then uncomment
-![Home dashboard](docs/screenshots/home.png)
--->
+<p align="center">
+  <img src="docs/screenshots/home1.png" alt="HiveDock home dashboard — an app grid built automatically from your stacks" width="920" />
+</p>
 
 ---
 
@@ -54,6 +54,8 @@ Delete the HiveDock container and every stack keeps running, untouched.
 - **Rename and delete** with guards so you can't break a running stack by accident.
 - A live **resource strip** at the top shows CPU, memory, and disk that the container can actually see.
 
+![Managing a stack — lifecycle actions, the containers table, an in-browser compose editor, and live logs](docs/screenshots/stacks1.png)
+
 ### Home — a dashboard you never set up
 - The app grid is **built from your stacks automatically**. Names, icons, links, and grouping come from your compose files and containers. No dashboard YAML, ever.
 - **Correct icons with no config**, matched from the image name against the [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) set and cached locally. A clean letter avatar is used when there's no match.
@@ -71,8 +73,19 @@ Delete the HiveDock container and every stack keeps running, untouched.
 - **Ignore per image** to stay on a version on purpose, even one that's currently up to date, so it never nags you. Tags set by variables (`image: x:${TAG}`) are flagged and never rewritten.
 - Set a **background check interval** (or turn it off), or check now by hand. Updates show up on the Updates page and as a badge in the sidebar. No webhooks.
 
+![The Updates page — version-aware suggestions labeled major / minor / patch, with per-image ignore](docs/screenshots/updates1.png)
+
 ### Themes
 - Six built-in looks: **Hive Dark** (default), **Modern Glossy**, **Minimalist Paper**, **Fallout**, **Cyberpunk**, and **Nord**. Pick one in Settings. The choice is saved in your browser.
+
+![The six built-in themes](docs/screenshots/themes.png)
+
+Themes re-skin the whole app, not just the sidebar — here's **Stacks** in Fallout and **Updates** in Cyberpunk:
+
+<p align="center">
+  <img src="docs/screenshots/stacks2.png" alt="The Stacks page in the Fallout theme" width="49%" />
+  <img src="docs/screenshots/updates2.png" alt="The Updates page in the Cyberpunk theme" width="49%" />
+</p>
 
 ### Runs itself, updates itself
 - **Small image, multi-arch** (amd64 + arm64), works in Docker-in-LXC. SQLite (pure Go, no CGO) stores *only* app state — settings, UI preferences, cached results — never your stack files.
@@ -83,6 +96,8 @@ Delete the HiveDock container and every stack keeps running, untouched.
 - **Read-only API token** for monitoring tools (Uptime Kuma, Gatus, scripts). It only works on `GET /api/health`, `/api/stacks`, and `/api/updates` — never on changes.
 - **Cleanup** with one click: prune dangling images and build cache to reclaim the disk that updates leave behind. It never touches tagged images, volumes, or networks.
 - **Safety checks on boot.** If your stacks folder isn't mounted the same way inside and outside the container, HiveDock switches to read-only mode and tells you. It also warns on Podman / rootless Docker setups it can't fully drive.
+
+![The Settings page — theme picker, self-update mode, private registries, read-only API token, and maintenance](docs/screenshots/settings1.png)
 
 ## HiveDock vs. the three tools it replaces
 
