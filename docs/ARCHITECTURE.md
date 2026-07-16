@@ -204,7 +204,7 @@ the host-stats strip, and an empty state.
 ## 4. Mutations
 
 Auth (single admin, bcrypt, HttpOnly session cookie, double-submit CSRF,
-`AUTH_DISABLED` escape hatch) gates every mutation. The compose runner is a
+optional trusted-header SSO) gates every mutation. The compose runner is a
 subprocess wrapper for up/down/restart/pull/stop/recreate/**update**
 (`up -d --pull always`, the digest-apply path) with WS-streamed output and a
 per-stack concurrency lock. **Per-service restart** scopes a `restart` to one

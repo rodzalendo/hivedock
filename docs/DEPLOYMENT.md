@@ -60,7 +60,7 @@ docker compose pull
 docker compose up -d
 ```
 
-`deploy/pct102.compose.yaml` already references `ghcr.io/rodzalendo/hivedock:edge`, mounts the socket, `./data`, and `/opt/stacks-test`, and sets `AUTH_DISABLED=true` (test env, behind LAN).
+`deploy/pct102.compose.yaml` already references `ghcr.io/rodzalendo/hivedock:edge`, mounts the socket, `./data`, and `/opt/stacks-test`. Auth is on — complete first-run setup at the login screen (the one-time token is printed to the container log).
 
 ### Subsequent updates
 

@@ -26,7 +26,8 @@ tasks:
       PORT: "5001"
       STACKS_DIR: "{{.STACKS_DIR}}"
       DATA_DIR: "{{.TASKFILE_DIR}}/data"
-      AUTH_DISABLED: "true"
+      # AUTH_DISABLED was removed. Complete first-run setup at the login screen
+      # (one-time token printed to the log), or set ADMIN_USER + ADMIN_PASSWORD_FILE.
       LOG_LEVEL: "debug"
     cmds:
       - go run ./cmd/hivedock
@@ -74,7 +75,6 @@ tasks:
     desc: "docker compose up against dev fixtures"
     env:
       STACKS_DIR: "{{.STACKS_DIR}}"
-      AUTH_DISABLED: "true"
     cmds:
       - docker compose up --build -d
 

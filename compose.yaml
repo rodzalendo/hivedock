@@ -16,7 +16,6 @@ services:
       # container (compose relative-path resolution). Keep the two sides equal.
       - STACKS_DIR=${STACKS_DIR:-/opt/stacks}
       - DATA_DIR=/app/data
-      - AUTH_DISABLED=${AUTH_DISABLED:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
