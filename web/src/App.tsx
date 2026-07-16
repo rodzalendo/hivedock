@@ -7,6 +7,7 @@ import Settings from "./views/Settings";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useLiveUpdates } from "./useLiveUpdates";
 import { useHashRoute, navigate } from "./useHashRoute";
+import { useI18n } from "./i18n";
 import {
   fetchAppUpdate,
   fetchAuthStatus,
@@ -28,13 +29,13 @@ type View = "home" | "stacks" | "updates" | "settings";
 
 const nav: {
   id: View;
-  label: string;
+  labelKey: string;
   Icon: (p: { className?: string }) => JSX.Element;
 }[] = [
-  { id: "home", label: "Home", Icon: HomeIcon },
-  { id: "stacks", label: "Stacks", Icon: StacksIcon },
-  { id: "updates", label: "Updates", Icon: UpdatesIcon },
-  { id: "settings", label: "Settings", Icon: SettingsIcon },
+  { id: "home", labelKey: "nav.home", Icon: HomeIcon },
+  { id: "stacks", labelKey: "nav.stacks", Icon: StacksIcon },
+  { id: "updates", labelKey: "nav.updates", Icon: UpdatesIcon },
+  { id: "settings", labelKey: "nav.settings", Icon: SettingsIcon },
 ];
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
     ? (route[0] as View)
     : "home";
   const qc = useQueryClient();
+  const { t } = useI18n();
   useLiveUpdates();
 
   const { data: auth } = useQuery({
@@ -91,7 +93,7 @@ export default function App() {
         </div>
 
         <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:space-y-0.5 md:overflow-visible md:px-3 md:pb-0">
-          {nav.map(({ id, label, Icon }) => (
+          {nav.map(({ id, labelKey, Icon }) => (
             <button
               key={id}
               onClick={() => navigate(id)}
@@ -102,7 +104,7 @@ export default function App() {
               }`}
             >
               <Icon className="h-[15px] w-[15px] shrink-0" />
-              {label}
+              {t(labelKey)}
               {id === "updates" && updateCount > 0 && (
                 <span className="rounded-full border border-hive-500/30 bg-hive-500/[0.14] px-1.5 py-0.5 font-mono text-[10.5px] font-medium leading-none text-hive-500 md:ml-auto">
                   {updateCount}
@@ -392,13 +394,14 @@ function BackendStatus() {
     refetchInterval: 30_000,
   });
   const ok = !!data && !isError && data.status === "ok";
+  const { t } = useI18n();
   return (
     <div
       className="flex items-center gap-2 px-1 text-[11px] text-zinc-500"
       title={
         data
           ? `Stacks dir: ${data.stacksDir}\nServer time: ${data.time}`
-          : "Backend unreachable"
+          : t("sidebar.backendDown")
       }
     >
       <span
@@ -406,7 +409,7 @@ function BackendStatus() {
           ok ? "bg-green-500" : "bg-red-500"
         }`}
       />
-      {ok ? "Backend ok" : "Backend unreachable"}
+      {ok ? t("sidebar.backendOk") : t("sidebar.backendDown")}
     </div>
   );
 }
@@ -418,6 +421,7 @@ function SessionControls({
   auth: AuthStatus | undefined;
   onLogout: () => void;
 }) {
+  const { t } = useI18n();
   if (!auth) return null;
   // Trusted-proxy (forward-auth) sessions have no local session to end — the
   // proxy owns sign-out — so show the user with an SSO tag and no button.
@@ -442,7 +446,7 @@ function SessionControls({
         onClick={onLogout}
         className="rounded-md px-2 py-1 text-xs text-zinc-400 transition hover:bg-zinc-900 hover:text-zinc-200"
       >
-        Sign out
+        {t("sidebar.signOut")}
       </button>
     </div>
   );

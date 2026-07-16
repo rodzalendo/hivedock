@@ -17,8 +17,10 @@ import {
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
 import { THEMES, getStoredTheme, setTheme, type ThemeId } from "../theme";
+import { useI18n, LANGUAGES, type Lang } from "../i18n";
 
 export default function Settings() {
+  const { t } = useI18n();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["settings"],
     queryFn: fetchSettings,
@@ -36,7 +38,7 @@ export default function Settings() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
       <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
-        Settings
+        {t("settings.title")}
       </h2>
 
       {/* Two columns on wide screens: look & update behavior on the left,
@@ -46,6 +48,7 @@ export default function Settings() {
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <AppearanceSection />
+          <LanguageSection />
           <IntervalSection current={data.checkInterval} onSaved={refetch} />
           <UpdateModeSection current={data.updateMode} onSaved={refetch} />
         </div>
@@ -82,6 +85,7 @@ export default function Settings() {
 // localStorage and applied instantly by flipping the `data-theme` attribute on
 // <html> (see theme.ts) — no server round-trip, it's a per-browser preference.
 function AppearanceSection() {
+  const { t } = useI18n();
   const [current, setCurrent] = useState<ThemeId>(() => getStoredTheme());
 
   function pick(id: ThemeId) {
@@ -92,11 +96,8 @@ function AppearanceSection() {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Appearance
-        <HelpTip>
-          The theme is remembered in this browser only — it isn&apos;t shared
-          with other users or devices.
-        </HelpTip>
+        {t("settings.appearance")}
+        <HelpTip>{t("settings.appearanceHelp")}</HelpTip>
       </h3>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {THEMES.map((t) => {
@@ -138,6 +139,31 @@ function AppearanceSection() {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+// LanguageSection switches the UI language. Like the theme, it's a per-browser
+// preference applied instantly (see i18n.tsx) — no server round-trip.
+function LanguageSection() {
+  const { t, lang, setLang } = useI18n();
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        {t("settings.language")}
+        <HelpTip>{t("settings.languageHelp")}</HelpTip>
+      </h3>
+      <select
+        value={lang}
+        onChange={(e) => setLang(e.target.value as Lang)}
+        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-accent-500"
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.id} value={l.id}>
+            {l.label}
+          </option>
+        ))}
+      </select>
     </section>
   );
 }
