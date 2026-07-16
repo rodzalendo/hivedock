@@ -58,6 +58,10 @@ type Service struct {
 	// container labels). In-memory only — used by discovery, not serialized to
 	// keep /api/stacks lean.
 	Labels map[string]string `json:"-"`
+	// NetworkFrom is the sibling service this one shares a network namespace with
+	// (compose `network_mode: service:<name>`); its published ports live on that
+	// sibling. In-memory only — discovery uses it to derive the dashboard link.
+	NetworkFrom string `json:"-"`
 }
 
 var projectSanitize = regexp.MustCompile(`[^a-z0-9_-]`)
@@ -145,6 +149,7 @@ func buildManaged(s ScannedStack, cts []docker.Container, daemonOK bool, hashes 
 		var composeLabels map[string]string
 		if def, ok := s.Services[name]; ok {
 			svc.Image = def.Image
+			svc.NetworkFrom = def.NetworkFrom
 			composeLabels = def.Labels
 		}
 		if ct, ok := byService[name]; ok {

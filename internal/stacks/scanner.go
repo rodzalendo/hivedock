@@ -7,9 +7,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// networkFrom extracts the sibling service name from a compose `network_mode`
+// value. Only `service:<name>` shares another compose service's ports (the
+// gluetun/VPN sidecar pattern); host/bridge/none/container: aren't a sibling.
+func networkFrom(networkMode string) string {
+	const prefix = "service:"
+	if s, ok := strings.CutPrefix(strings.TrimSpace(networkMode), prefix); ok {
+		return strings.TrimSpace(s)
+	}
+	return ""
+}
 
 // composeFilenames are the canonical compose file names, in precedence order
 // (compose itself prefers compose.yaml over docker-compose.yml).
@@ -34,6 +46,10 @@ type ScannedStack struct {
 type ScannedSvc struct {
 	Image  string
 	Labels map[string]string
+	// NetworkFrom is the sibling service this one shares a network namespace with
+	// (compose `network_mode: service:<name>`), so it has no published ports of
+	// its own — they live on the target. "" when it has its own network.
+	NetworkFrom string
 }
 
 // composeDoc mirrors just the fields we parse. Unknown fields are ignored.
@@ -43,8 +59,9 @@ type composeDoc struct {
 }
 
 type composeService struct {
-	Image  string        `yaml:"image"`
-	Labels composeLabels `yaml:"labels"`
+	Image       string        `yaml:"image"`
+	Labels      composeLabels `yaml:"labels"`
+	NetworkMode string        `yaml:"network_mode"`
 }
 
 // Scan walks stacksDir one level deep and parses every directory that contains
@@ -87,7 +104,11 @@ func Scan(stacksDir string) ([]ScannedStack, error) {
 				s.Project = doc.Name
 			}
 			for name, svc := range doc.Services {
-				s.Services[name] = ScannedSvc{Image: svc.Image, Labels: svc.Labels}
+				s.Services[name] = ScannedSvc{
+					Image:       svc.Image,
+					Labels:      svc.Labels,
+					NetworkFrom: networkFrom(svc.NetworkMode),
+				}
 			}
 		}
 		stacks = append(stacks, s)

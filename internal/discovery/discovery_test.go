@@ -157,6 +157,32 @@ func TestResolvePriorityChainsAndLabels(t *testing.T) {
 	}
 }
 
+// A service behind another's network (network_mode: service:X, e.g. qBittorrent
+// behind gluetun) has no ports of its own; it should borrow the target's ports
+// so the app card gets a clickable link.
+func TestNetworkModeInheritsSiblingPorts(t *testing.T) {
+	all := []stacks.Stack{
+		{
+			Name: "qbittorrent", Origin: stacks.OriginManaged, Services: []stacks.Service{
+				{Name: "gluetun", Image: "qmcgaw/gluetun", State: "running",
+					Ports: []docker.Port{{Public: 8080, Private: 8080, Type: "tcp"}}},
+				{Name: "qbittorrent", Image: "lscr.io/linuxserver/qbittorrent", State: "running",
+					NetworkFrom: "gluetun"},
+			},
+		},
+	}
+	entries := Resolve(all, Options{Host: "192.168.1.10:5001"})
+	var qbt Entry
+	for _, e := range entries {
+		if e.Service == "qbittorrent" {
+			qbt = e
+		}
+	}
+	if qbt.URL != "http://192.168.1.10:8080" {
+		t.Errorf("qbittorrent should inherit gluetun's port for its link, got URL=%q", qbt.URL)
+	}
+}
+
 func TestPrimaryServiceAndSidecars(t *testing.T) {
 	port := func(p uint16) []docker.Port { return []docker.Port{{Public: p, Private: p, Type: "tcp"}} }
 	all := []stacks.Stack{

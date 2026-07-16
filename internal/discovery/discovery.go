@@ -120,7 +120,20 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 	url := firstLabel(l, "hivedock.url", "homepage.href", "homepage.url")
 	var ports []PortLink
 	if url == "" {
-		url, ports = urlHeuristic(svc, opts.Host)
+		// A service behind another's network (compose `network_mode:
+		// service:X`, e.g. qBittorrent behind a gluetun VPN) publishes no
+		// ports of its own — they live on the target. Borrow the target's
+		// ports so the app card gets a link instead of the VPN sidecar.
+		portSvc := svc
+		if len(svc.Ports) == 0 && svc.NetworkFrom != "" {
+			for _, sib := range st.Services {
+				if sib.Name == svc.NetworkFrom && len(sib.Ports) > 0 {
+					portSvc = sib
+					break
+				}
+			}
+		}
+		url, ports = urlHeuristic(portSvc, opts.Host)
 	}
 	// A user's explicit link wins over labels and the heuristic — the reliable
 	// fix when a service publishes no ports on its own container.
