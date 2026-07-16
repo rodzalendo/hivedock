@@ -59,8 +59,8 @@
 /* --- Fallout / Pip-Boy: monochrome phosphor green, pixel type, CRT ------- */
 :root[data-theme="fallout"] {
   color-scheme: dark;
-  --font-sans: "VT323";
-  --font-mono: "VT323";
+  --font-sans: "Pixelify Sans";
+  --font-mono: "Pixelify Sans";
 
   --c-zinc-50: 199 255 189;
   --c-zinc-100: 157 255 140;
@@ -104,8 +104,8 @@
 /* --- Cyberpunk: pixel type, neon magenta + cyan on midnight ------------- */
 :root[data-theme="cyberpunk"] {
   color-scheme: dark;
-  --font-sans: "VT323";
-  --font-mono: "VT323";
+  --font-sans: "Pixelify Sans";
+  --font-mono: "Pixelify Sans";
 
   --c-zinc-50: 255 255 255;
   --c-zinc-100: 242 236 251;
@@ -199,7 +199,7 @@
    body color and bg-zinc-950 stays the page — just flipped in luminance. */
 :root[data-theme="paper"] {
   color-scheme: light;
-  --font-sans: "IBM Plex Sans";
+  --font-sans: "IBM Plex Serif";
   --font-mono: "IBM Plex Mono";
 
   --c-zinc-50: 26 26 23;
@@ -241,6 +241,52 @@
   --c-sky-400: 63 110 158;
   --c-sky-500: 47 90 133;
   --c-emerald-400: 47 125 63;
+}
+
+/* --- Nord: arctic polar-night blue-grays with frost accents ------------- */
+:root[data-theme="nord"] {
+  color-scheme: dark;
+  --font-sans: "IBM Plex Sans";
+  --font-mono: "IBM Plex Mono";
+
+  --c-zinc-50: 236 239 244;
+  --c-zinc-100: 229 233 240;
+  --c-zinc-200: 216 222 233;
+  --c-zinc-300: 192 200 216;
+  --c-zinc-400: 154 165 189;
+  --c-zinc-500: 123 136 161;
+  --c-zinc-600: 97 110 136;
+  --c-zinc-700: 76 86 106;
+  --c-zinc-800: 67 76 94;
+  --c-zinc-900: 59 66 82;
+  --c-zinc-950: 46 52 64;
+
+  /* Attention → aurora yellow. */
+  --c-hive-400: 240 211 153;
+  --c-hive-500: 235 203 139;
+  --c-hive-600: 217 184 111;
+
+  /* Primary interactive → frost blue. */
+  --c-accent-400: 136 192 208;
+  --c-accent-500: 129 161 193;
+  --c-accent-600: 94 129 172;
+
+  --c-green-400: 163 190 140;
+  --c-green-500: 143 175 119;
+  --c-amber-200: 242 226 192;
+  --c-amber-300: 236 217 165;
+  --c-amber-400: 235 203 139;
+  --c-amber-500: 217 184 111;
+  --c-amber-600: 201 168 95;
+  --c-red-200: 230 179 184;
+  --c-red-300: 217 154 161;
+  --c-red-400: 191 97 106;
+  --c-red-500: 181 84 93;
+  --c-red-900: 74 44 48;
+  --c-red-950: 58 34 38;
+  --c-sky-400: 136 192 208;
+  --c-sky-500: 129 161 193;
+  --c-emerald-400: 163 190 140;
 }
 
 body {
@@ -289,8 +335,7 @@ body {
    and render bitmap art crisp. */
 :root[data-theme="fallout"] body,
 :root[data-theme="cyberpunk"] body {
-  font-size: 15.5px;
-  letter-spacing: 0.01em;
+  font-size: 15px;
 }
 :root[data-theme="fallout"] *,
 :root[data-theme="cyberpunk"] * {
@@ -321,28 +366,53 @@ body {
   );
 }
 
-/* Glossy: gradient backdrop, frosted-glass panels, soft depth. */
+/* Glossy: a vivid multi-color gradient backdrop with real frosted-glass panels
+   floating over it — translucent fills, backdrop blur + saturation, a bright
+   top edge, and layered depth shadows. */
 :root[data-theme="glossy"] body {
   background:
     radial-gradient(
-      1200px 600px at 12% -10%,
-      rgb(var(--c-accent-600) / 0.16),
+      900px 500px at 8% -12%,
+      rgb(var(--c-accent-500) / 0.28),
       transparent 60%
     ),
     radial-gradient(
-      1000px 700px at 100% 0%,
-      rgb(var(--c-sky-500) / 0.1),
+      900px 600px at 100% 0%,
+      rgb(var(--c-sky-500) / 0.2),
       transparent 55%
+    ),
+    radial-gradient(
+      800px 800px at 55% 120%,
+      rgb(139 92 246 / 0.16),
+      transparent 60%
     ),
     rgb(var(--c-zinc-950));
   background-attachment: fixed;
 }
+/* Frost the card/panel/modal surfaces. Kept to the larger radii so buttons and
+   pills (rounded-lg/full) keep their solid fills. */
 :root[data-theme="glossy"] .rounded-xl,
 :root[data-theme="glossy"] .rounded-2xl {
-  backdrop-filter: blur(12px);
+  background-color: rgb(var(--c-zinc-900) / 0.45) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-color: rgb(255 255 255 / 0.1);
   box-shadow:
-    0 10px 30px -12px rgb(0 0 0 / 0.55),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
+    0 16px 40px -16px rgb(0 0 0 / 0.65),
+    inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+/* Give primary buttons and the logo a glossy sheen. */
+:root[data-theme="glossy"] .bg-accent-600,
+:root[data-theme="glossy"] .bg-accent-500,
+:root[data-theme="glossy"] .bg-hive-500 {
+  background-image: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.22),
+    rgb(255 255 255 / 0)
+  );
+  box-shadow:
+    0 4px 14px -4px rgb(var(--c-accent-500) / 0.5),
+    inset 0 1px 0 rgb(255 255 255 / 0.3);
 }
 
 /* Paper: kill the dark-theme shadows so it reads flat and printed. */

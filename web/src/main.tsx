@@ -11,9 +11,16 @@ import "@fontsource/ibm-plex-sans/700.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
-// Pixel fonts for the Fallout / Cyberpunk themes (bundled by Vite, offline).
-import "@fontsource/vt323/400.css";
-import "@fontsource/press-start-2p/400.css";
+// Serif for the Minimalist Paper theme (editorial look).
+import "@fontsource/ibm-plex-serif/400.css";
+import "@fontsource/ibm-plex-serif/500.css";
+import "@fontsource/ibm-plex-serif/600.css";
+import "@fontsource/ibm-plex-serif/700.css";
+// Readable pixel font for the Fallout / Cyberpunk themes (bundled, offline).
+import "@fontsource/pixelify-sans/400.css";
+import "@fontsource/pixelify-sans/500.css";
+import "@fontsource/pixelify-sans/600.css";
+import "@fontsource/pixelify-sans/700.css";
 import "./index.css";
 import { initTheme } from "./theme";
 

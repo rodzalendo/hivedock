@@ -8,7 +8,13 @@ import { useEffect, useState } from "react";
 // scale at those variables). So switching themes is a single attribute write —
 // no component touches colors directly.
 
-export type ThemeId = "hive" | "fallout" | "cyberpunk" | "glossy" | "paper";
+export type ThemeId =
+  | "hive"
+  | "glossy"
+  | "paper"
+  | "fallout"
+  | "cyberpunk"
+  | "nord";
 
 export type Theme = {
   id: ThemeId;
@@ -26,6 +32,18 @@ export const THEMES: Theme[] = [
     swatch: ["#15181e", "#d9a13c"],
   },
   {
+    id: "glossy",
+    name: "Modern Glossy",
+    blurb: "Frosted-glass panels over a violet gradient.",
+    swatch: ["#151824", "#8b5cf6"],
+  },
+  {
+    id: "paper",
+    name: "Minimalist Paper",
+    blurb: "Serif ink on off-white with hairline rules.",
+    swatch: ["#f0eee7", "#3f5f85"],
+  },
+  {
     id: "fallout",
     name: "Fallout",
     blurb: "Pip-Boy phosphor green on a CRT, scanlines and all.",
@@ -34,20 +52,14 @@ export const THEMES: Theme[] = [
   {
     id: "cyberpunk",
     name: "Cyberpunk",
-    blurb: "Pixelated neon — hot magenta and cyan on midnight.",
+    blurb: "Pixel-art neon — hot magenta and cyan on midnight.",
     swatch: ["#120a1f", "#ff3ea5"],
   },
   {
-    id: "glossy",
-    name: "Modern Glossy",
-    blurb: "Glassy translucent panels, gradients, and violet glow.",
-    swatch: ["#151824", "#8b5cf6"],
-  },
-  {
-    id: "paper",
-    name: "Minimalist Paper",
-    blurb: "Light, printed ink on off-white with hairline rules.",
-    swatch: ["#f0eee7", "#3f5f85"],
+    id: "nord",
+    name: "Nord",
+    blurb: "Arctic calm — muted blue-grays with icy frost accents.",
+    swatch: ["#2e3440", "#88c0d0"],
   },
 ];
 
