@@ -81,7 +81,7 @@ export default function App() {
             title="Home"
           >
             <LogoMark />
-            <span className="font-mono text-[14.5px] font-semibold tracking-[0.02em] text-zinc-50">
+            <span className="brand-wordmark font-mono text-[14.5px] font-semibold tracking-[0.02em] text-zinc-50">
               hivedock
             </span>
           </button>

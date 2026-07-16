@@ -59,8 +59,11 @@
 /* --- Fallout / Pip-Boy: monochrome phosphor green, pixel type, CRT ------- */
 :root[data-theme="fallout"] {
   color-scheme: dark;
-  --font-sans: "Pixelify Sans";
-  --font-mono: "Pixelify Sans";
+  /* Terminal/CRT reads as monospace, not pixel-art — far more legible. The
+     pixel font is kept as a display accent on the logo wordmark only. */
+  --font-sans: "IBM Plex Mono";
+  --font-mono: "IBM Plex Mono";
+  --font-display: "Pixelify Sans";
 
   --c-zinc-50: 199 255 189;
   --c-zinc-100: 157 255 140;
@@ -104,8 +107,9 @@
 /* --- Cyberpunk: pixel type, neon magenta + cyan on midnight ------------- */
 :root[data-theme="cyberpunk"] {
   color-scheme: dark;
-  --font-sans: "Pixelify Sans";
-  --font-mono: "Pixelify Sans";
+  --font-sans: "IBM Plex Mono";
+  --font-mono: "IBM Plex Mono";
+  --font-display: "Pixelify Sans";
 
   --c-zinc-50: 255 255 255;
   --c-zinc-100: 242 236 251;
@@ -335,12 +339,19 @@ body {
    and render bitmap art crisp. */
 :root[data-theme="fallout"] body,
 :root[data-theme="cyberpunk"] body {
-  font-size: 15px;
+  font-size: 13.5px;
 }
 :root[data-theme="fallout"] *,
 :root[data-theme="cyberpunk"] * {
   border-radius: 0 !important;
   image-rendering: pixelated;
+}
+/* Keep a single pixel-art signature: the logo wordmark. */
+:root[data-theme="fallout"] .brand-wordmark,
+:root[data-theme="cyberpunk"] .brand-wordmark {
+  font-family: var(--font-display), "Pixelify Sans", monospace;
+  font-size: 1em;
+  letter-spacing: 0.04em;
 }
 
 /* Fallout: phosphor glow + gentle CRT scanlines over the whole viewport. */
