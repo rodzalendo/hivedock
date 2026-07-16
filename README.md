@@ -61,7 +61,7 @@ It's a single Go binary with an embedded UI, ~30 MB image, no database server, n
 - Everything is an **override on top of a sensible default** — labels (`hivedock.*`, or legacy `homepage.*`) win if present, but nothing *requires* them.
 
 ### Updates — suggestions you can trust
-- Checks for newer images across **Docker Hub, GHCR, LinuxServer (lscr.io), and Quay**, with anonymous auth and multi-arch-correct digest handling.
+- Checks for newer images across **Docker Hub, GHCR, LinuxServer (lscr.io), Quay, and any v2 registry** — anonymously by default, or with **per-registry credentials and custom CA / TLS trust** for private and self-signed registries — with multi-arch-correct digest handling.
 - **Semver-aware**: it only proposes tags on *your* track — same prefix (`v`), same part count (`16` isn't the `16.4` family), same suffix (`-alpine`) — and labels the jump major / minor / patch. Calendar-versioned images are handled without a bogus semver label.
 - **Trustworthy by construction**: the candidate's build date is cross-checked against your current image, so a stale legacy tag can never masquerade as an upgrade. This engine is built test-corpus-first against real-world image tags.
 - **Digest checking** for `latest`-style mutable tags — when the tag hasn't moved names but the image underneath has, you get a "new digest" with a one-click **pull & redeploy**.
@@ -71,7 +71,7 @@ It's a single Go binary with an embedded UI, ~30 MB image, no database server, n
 
 ### Ops — runs itself, updates itself
 - **Single binary, embedded UI**, multi-arch images (amd64 + arm64), works in Docker-in-LXC. SQLite (pure-Go, no CGO) stores *only* app state — settings, UI prefs, cached check results — never stack definitions.
-- **Session auth** (single admin, bcrypt) with CSRF protection on every mutation and login rate-damping; an `AUTH_DISABLED` escape hatch for trusted LANs.
+- **Session auth** (single admin, bcrypt) with CSRF protection on every mutation and login rate-damping; optional forward-auth (trusted-header) SSO for a no-second-login setup behind your proxy.
 - **Live everything** over a single multiplexed WebSocket — stack changes, deploy output, and log streams all push to the browser; no polling, no manual refresh.
 - **Real routing** — Stacks, Updates, Settings, and an open stack each live at their own URL, so a refresh or a bookmark keeps your place.
 - **Verified self-update from the sidebar**: HiveDock checks for its *own* new release on every load; when one exists the version turns into a one-click update. Every release is cosign-signed (keyless, via GitHub Actions OIDC), and HiveDock **verifies that signature before offering the update and pins the exact verified digest** when applying it — a detached helper pulls those precise bytes, recreates the container, and the page reconnects by itself, no SSH required. If a newer tag ever fails verification you get an alert, not an offer. Choose `full` / `check-only` / `off` in Settings. Every release ships with generated GitHub release notes linked right there.
@@ -85,7 +85,7 @@ It's a single Go binary with an embedded UI, ~30 MB image, no database server, n
 
 **Mutations shell out; reads use the SDK.** HiveDock reads Docker through the official Go SDK, but every state change runs the real `docker compose` binary as a subprocess (up/pull/restart/stop/recreate), streamed line-by-line to your browser and guarded by a per-stack lock so two operations never race. It is never a compose reimplementation — what you'd run by hand is what it runs. Compose files are only ever written in two places: your explicit save in the editor, and the single-line `image:` tag rewrite in the update flow (a targeted scalar edit that preserves comments and ordering — never a parse-and-dump).
 
-**The update engine.** A registry v2 client fetches tag lists and manifest digests (anonymous bearer tokens per registry; OCI + Docker Accept headers so multi-arch digests are correct). The semver engine proposes only same-track candidates and confirms each with a build-date check against your running image. For mutable `latest`-style tags it compares digests instead. Env-interpolated tags are surfaced but never touched.
+**The update engine.** A registry v2 client fetches tag lists and manifest digests (bearer tokens per registry — anonymous by default, or authenticated when you configure credentials; OCI + Docker Accept headers so multi-arch digests are correct). The semver engine proposes only same-track candidates and confirms each with a build-date check against your running image. For mutable `latest`-style tags it compares digests instead. Env-interpolated tags are surfaced but never touched.
 
 **Self-update, safely.** A container can't `compose up` itself — it would kill itself mid-recreate. So HiveDock discovers its own compose project from the labels Docker stamped on its container, launches a small **detached helper** container from the already-present image that runs `compose pull && up -d` on the HiveDock project, and survives its own replacement. The browser polls health and reloads when the new version answers. If anything's off, the old container is left untouched and you get a clear message.
 
