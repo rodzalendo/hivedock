@@ -32,23 +32,23 @@ You keep your SSH-and-YAML workflow. You just get a UI that respects it.
 
 ![Managing a stack](docs/screenshots/stacks1.png)
 
-Every stack and container in one list. Edit compose and `.env` in the browser (validated before it saves), then deploy, pull, restart, or stop with the output streaming live and a progress bar while it works. Restart a single service without touching the rest, tail per-service logs, and if a running container drifts from its file you get a badge that explains why. Containers you didn't create show up too, read-only, so nothing on screen is a lie.
+Every stack and container in one list. Edit compose and `.env` in the browser (validated before it saves), then deploy, pull, restart, or stop with the output streaming live. Restart a single service without touching the rest, tail per-service logs, and if a running container drifts from its file you get a badge that explains why. Failing health checks are flagged too, so a container that's running but unhealthy stands out. Containers you didn't create show up too, read-only, so nothing on screen is a lie.
 
 ## Dashboard
 
-Your apps appear on their own, with the right icons and clickable links, all pulled from your compose files and containers. There's no dashboard YAML to write. Rename cards, swap icons, group things, hide the plumbing, drag stuff around, and it all saves on the server. Old `homepage.*` labels are read as-is, so switching over costs you nothing.
+Your apps appear on their own, with the right icons and clickable links, all pulled from your compose files and containers. There's no dashboard YAML to write. Apps behind a VPN sidecar (like qBittorrent behind gluetun) get their link figured out automatically, and a header strip counts what's active, inactive, and exited. Rename cards, swap icons, group things, hide the plumbing, drag stuff around, and it all saves on the server. Old `homepage.*` labels are read as-is, so switching over costs you nothing.
 
 ## Updates
 
 ![The Updates page](docs/screenshots/updates1.png)
 
-HiveDock checks Docker Hub, GHCR, LinuxServer, Quay, and any other v2 registry, with logins and custom TLS for the private ones. It only suggests versions on your track and cross-checks build dates, so a stale tag never looks like a new release. When there's an update you apply it right from the app: it rewrites just the `image:` line in your compose file (comments and formatting intact) and redeploys, one image or all at once, with a progress bar. Nothing updates on its own unless you click. Pin anything you want to stay on.
+HiveDock checks Docker Hub, GHCR, LinuxServer, Quay, and any other v2 registry, with logins and custom TLS for the private ones. It only suggests versions on your track and cross-checks build dates, so a stale tag never looks like a new release. When there's an update you apply it right from the app: it rewrites just the `image:` line in your compose file (comments and formatting intact) and redeploys, one image or all at once. Nothing updates on its own unless you click. Pin anything you want to stay on.
 
 ## Themes
 
 ![The six themes](docs/screenshots/themes.png)
 
-Six looks to pick from in Settings: Hive Dark, Modern Glossy, Minimalist Paper, Fallout, Cyberpunk, and Nord. They re-skin the whole app, not just the sidebar. Here's Stacks in Fallout and Updates in Cyberpunk:
+Six looks to pick from in Settings: Hive Dark, Modern Glossy, Minimalist Paper, Fallout, Cyberpunk, and Nord. They re-skin the whole app, not just the sidebar. The UI also speaks English, Polish, German, Spanish, and French. Here's Stacks in Fallout and Updates in Cyberpunk:
 
 <p align="center">
   <img src="docs/screenshots/stacks2.png" alt="Stacks in the Fallout theme" width="49%" />
