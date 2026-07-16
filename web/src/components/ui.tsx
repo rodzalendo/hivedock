@@ -193,39 +193,24 @@ export function HelpTip({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ProgressBar is a slim theme-aware bar. Pass `value` (0..1) for determinate
-// progress, or `indeterminate` for an animated sweep when the total isn't
-// known (a single compose op of unknown duration). `tone` picks the fill color.
-export function ProgressBar({
-  value,
-  indeterminate,
-  tone = "accent",
-  className = "",
+// WrapToggle is the "wrap long lines" checkbox shown above the code editors.
+export function WrapToggle({
+  wrap,
+  onChange,
 }: {
-  value?: number;
-  indeterminate?: boolean;
-  tone?: "accent" | "hive";
-  className?: string;
+  wrap: boolean;
+  onChange: (v: boolean) => void;
 }) {
-  const pct = Math.max(0, Math.min(1, value ?? 0)) * 100;
-  const fill = tone === "hive" ? "bg-hive-500" : "bg-accent-500";
   return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={indeterminate ? undefined : 100}
-      aria-valuenow={indeterminate ? undefined : Math.round(pct)}
-      className={`h-1.5 w-full overflow-hidden rounded-full bg-zinc-800 ${className}`}
-    >
-      {indeterminate ? (
-        <div className={`progress-indeterminate h-full w-1/3 rounded-full ${fill}`} />
-      ) : (
-        <div
-          className={`h-full rounded-full transition-[width] duration-500 ease-out ${fill}`}
-          style={{ width: `${pct}%` }}
-        />
-      )}
-    </div>
+    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-zinc-500">
+      <input
+        type="checkbox"
+        checked={wrap}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-accent-500"
+      />
+      Wrap
+    </label>
   );
 }
 

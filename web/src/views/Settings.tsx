@@ -34,41 +34,46 @@ export default function Settings() {
   if (!data) return null;
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-5">
       <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
         Settings
       </h2>
 
-      <AppearanceSection />
+      {/* Two columns on wide screens: look & update behavior on the left,
+          registries / security / maintenance / info on the right. Each column
+          groups sections by function and the whole page centers and fills the
+          available width instead of hugging the left edge. */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
+          <AppearanceSection />
+          <IntervalSection current={data.checkInterval} onSaved={refetch} />
+          <UpdateModeSection current={data.updateMode} onSaved={refetch} />
+        </div>
 
-      <IntervalSection current={data.checkInterval} onSaved={refetch} />
+        <div className="space-y-6">
+          <RegistriesSection />
+          <ApiTokenSection tokenSet={data.apiTokenSet} onChanged={refetch} />
+          <GitSection data={data} onSaved={refetch} />
+          <PruneSection />
 
-      <UpdateModeSection current={data.updateMode} onSaved={refetch} />
-
-      <GitSection data={data} onSaved={refetch} />
-
-      <ApiTokenSection tokenSet={data.apiTokenSet} onChanged={refetch} />
-
-      <RegistriesSection />
-
-      <PruneSection />
-
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-          Environment
-          <HelpTip>
-            Configured via environment variables (change requires a container
-            restart).
-          </HelpTip>
-        </h3>
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
-          <Row label="Stacks directory" value={data.stacksDir} mono />
-          <Row label="Data directory" value={data.dataDir} mono />
-          <Row label="Public host" value={data.publicHost || "(request host)"} />
-          <Row label="Authentication" value={data.authMode} />
-          <Row label="Version" value={data.version} mono />
-        </dl>
-      </section>
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+            <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+              Environment
+              <HelpTip>
+                Configured via environment variables (change requires a
+                container restart).
+              </HelpTip>
+            </h3>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
+              <Row label="Stacks directory" value={data.stacksDir} mono />
+              <Row label="Data directory" value={data.dataDir} mono />
+              <Row label="Public host" value={data.publicHost || "(request host)"} />
+              <Row label="Authentication" value={data.authMode} />
+              <Row label="Version" value={data.version} mono />
+            </dl>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

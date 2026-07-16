@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
 import { fetchEnv, saveEnv, type SaveConflict } from "../api";
 import { useTheme, isLightTheme } from "../theme";
+import { useEditorWrap } from "../useEditorWrap";
+import { WrapToggle } from "./ui";
 
 type Feedback =
   | { kind: "none" }
@@ -20,6 +23,7 @@ export default function EnvEditor({ stack }: { stack: string }) {
   });
 
   const theme = useTheme();
+  const [wrap, setWrap] = useEditorWrap();
   const [text, setText] = useState("");
   const [savedText, setSavedText] = useState("");
   const [baseSha, setBaseSha] = useState("");
@@ -97,6 +101,9 @@ export default function EnvEditor({ stack }: { stack: string }) {
             unsaved
           </span>
         )}
+        <span className="ml-auto">
+          <WrapToggle wrap={wrap} onChange={setWrap} />
+        </span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-800">
@@ -104,6 +111,7 @@ export default function EnvEditor({ stack }: { stack: string }) {
           value={text}
           height="360px"
           theme={isLightTheme(theme) ? "light" : "dark"}
+          extensions={wrap ? [EditorView.lineWrapping] : undefined}
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
           placeholder={"# KEY=value\nPUID=1000\nTZ=Europe/Warsaw"}

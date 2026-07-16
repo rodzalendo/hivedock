@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
+import { EditorView } from "@codemirror/view";
 import { useTheme, isLightTheme } from "../theme";
+import { useEditorWrap } from "../useEditorWrap";
+import { WrapToggle } from "./ui";
 import {
   fetchCompose,
   validateCompose,
@@ -30,6 +33,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
   });
 
   const theme = useTheme();
+  const [wrap, setWrap] = useEditorWrap();
   const [text, setText] = useState<string>("");
   const [savedText, setSavedText] = useState<string>("");
   const [baseSha, setBaseSha] = useState<string>("");
@@ -121,6 +125,9 @@ export default function ComposeEditor({ stack }: { stack: string }) {
             unsaved
           </span>
         )}
+        <span className="ml-auto">
+          <WrapToggle wrap={wrap} onChange={setWrap} />
+        </span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-800">
@@ -128,7 +135,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           value={text}
           height="360px"
           theme={isLightTheme(theme) ? "light" : "dark"}
-          extensions={[yaml()]}
+          extensions={wrap ? [yaml(), EditorView.lineWrapping] : [yaml()]}
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
         />

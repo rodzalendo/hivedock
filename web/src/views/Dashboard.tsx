@@ -99,6 +99,21 @@ export default function Dashboard() {
 
   const entries = useMemo(() => data ?? [], [data]);
 
+  // At-a-glance service tally across every discovered service (hidden ones
+  // included): running = active, exited = stopped/crashed, everything else
+  // (created/paused/absent) = inactive.
+  const counts = useMemo(() => {
+    let active = 0,
+      exited = 0,
+      inactive = 0;
+    for (const e of entries) {
+      if (e.status === "running") active++;
+      else if (e.status === "exited") exited++;
+      else inactive++;
+    }
+    return { active, exited, inactive };
+  }, [entries]);
+
   // Hidden and sidecar services per stack: shown as a collapsible sub-list
   // under the stack's primary card instead of getting their own tile.
   const subsByStack = useMemo(() => {
@@ -451,6 +466,21 @@ export default function Dashboard() {
             Show hidden ({hiddenCount})
           </label>
         )}
+
+        <div className="flex items-center gap-3 text-xs text-zinc-400">
+          <span className="flex items-center gap-1.5" title="Running">
+            <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+            {counts.active} active
+          </span>
+          <span className="flex items-center gap-1.5" title="Created / paused / not present">
+            <span className="inline-block h-2 w-2 rounded-full bg-zinc-600" />
+            {counts.inactive} inactive
+          </span>
+          <span className="flex items-center gap-1.5" title="Exited (stopped or crashed)">
+            <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+            {counts.exited} exited
+          </span>
+        </div>
 
         <span className="flex-1" />
 
