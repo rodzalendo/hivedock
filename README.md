@@ -30,7 +30,7 @@ Three configs, three label schemes, three mental models. The dashboard lies the 
 
 **One container that does all three, coherently, for one host.** The insight that ties them together: because HiveDock already reads your compose files and talks to Docker, it *already knows* your stacks, services, ports, images, and health. So the dashboard is free and can never drift — it **is** derived from reality — and update checks have real version context. You write no dashboard config and adopt no new label scheme.
 
-It's a single Go binary with an embedded UI, ~30 MB image, no database server, no agents, no cloud. It reads the compose files you already have and never copies them into a database. Delete the HiveDock container and every stack keeps running, untouched.
+HiveDock's own code is a single static Go binary with the UI baked in; the image adds only what it drives — the Docker CLI + Compose plugin — plus cosign (for verified self-update) and git (for the optional audit trail) on a small Alpine base. No database server, no agents, no cloud. It reads the compose files you already have and never copies them into a database. Delete the HiveDock container and every stack keeps running, untouched.
 
 ## Who it's for
 
