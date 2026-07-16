@@ -2,8 +2,245 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ---------------------------------------------------------------------------
+   Themes
+   -------
+   Each theme sets a full set of `--c-*` channel variables (space-separated RGB,
+   e.g. "16 18 22") that tailwind.config.js wraps as rgb(var(--c-*) / <alpha>).
+   Switching the `data-theme` attribute on <html> re-points every color at once.
+   The default (Hive Dark) lives on :root; the rest override under [data-theme].
+   Fonts are variables too, so pixel themes can swap the whole typeface.
+--------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="hive"] {
   color-scheme: dark;
+  --font-sans: "IBM Plex Sans";
+  --font-mono: "IBM Plex Mono";
+
+  --c-zinc-50: 238 241 245;
+  --c-zinc-100: 226 230 236;
+  --c-zinc-200: 214 218 226;
+  --c-zinc-300: 200 205 214;
+  --c-zinc-400: 139 147 161;
+  --c-zinc-500: 123 131 145;
+  --c-zinc-600: 91 98 112;
+  --c-zinc-700: 42 48 59;
+  --c-zinc-800: 29 34 42;
+  --c-zinc-900: 21 24 30;
+  --c-zinc-950: 16 18 22;
+
+  --c-hive-400: 226 180 95;
+  --c-hive-500: 217 161 60;
+  --c-hive-600: 217 161 60;
+
+  --c-accent-400: 157 191 230;
+  --c-accent-500: 127 169 221;
+  --c-accent-600: 111 155 212;
+
+  --c-green-400: 74 222 128;
+  --c-green-500: 34 197 94;
+  --c-amber-200: 253 230 138;
+  --c-amber-300: 252 211 77;
+  --c-amber-400: 251 191 36;
+  --c-amber-500: 245 158 11;
+  --c-amber-600: 217 119 6;
+  --c-red-200: 254 202 202;
+  --c-red-300: 252 165 165;
+  --c-red-400: 248 113 113;
+  --c-red-500: 239 68 68;
+  --c-red-900: 127 29 29;
+  --c-red-950: 69 10 10;
+  --c-sky-400: 56 189 248;
+  --c-sky-500: 14 165 233;
+  --c-emerald-400: 52 211 153;
+}
+
+/* --- Fallout / Pip-Boy: monochrome phosphor green, pixel type, CRT ------- */
+:root[data-theme="fallout"] {
+  color-scheme: dark;
+  --font-sans: "VT323";
+  --font-mono: "VT323";
+
+  --c-zinc-50: 199 255 189;
+  --c-zinc-100: 157 255 140;
+  --c-zinc-200: 125 252 106;
+  --c-zinc-300: 111 224 92;
+  --c-zinc-400: 79 194 63;
+  --c-zinc-500: 63 156 51;
+  --c-zinc-600: 47 107 38;
+  --c-zinc-700: 29 58 23;
+  --c-zinc-800: 19 38 15;
+  --c-zinc-900: 14 28 11;
+  --c-zinc-950: 10 20 8;
+
+  --c-hive-400: 182 255 90;
+  --c-hive-500: 166 240 72;
+  --c-hive-600: 143 214 54;
+
+  --c-accent-400: 125 252 106;
+  --c-accent-500: 91 232 74;
+  --c-accent-600: 67 198 52;
+
+  --c-green-400: 125 252 106;
+  --c-green-500: 67 198 52;
+  --c-amber-200: 232 255 160;
+  --c-amber-300: 214 240 90;
+  --c-amber-400: 214 240 90;
+  --c-amber-500: 198 224 74;
+  --c-amber-600: 166 240 72;
+  /* Danger stays warm so it reads as an alarm against the green field. */
+  --c-red-200: 255 201 176;
+  --c-red-300: 255 171 134;
+  --c-red-400: 255 138 92;
+  --c-red-500: 255 107 61;
+  --c-red-900: 58 18 6;
+  --c-red-950: 37 10 3;
+  --c-sky-400: 91 232 74;
+  --c-sky-500: 67 198 52;
+  --c-emerald-400: 125 252 106;
+}
+
+/* --- Cyberpunk: pixel type, neon magenta + cyan on midnight ------------- */
+:root[data-theme="cyberpunk"] {
+  color-scheme: dark;
+  --font-sans: "VT323";
+  --font-mono: "VT323";
+
+  --c-zinc-50: 255 255 255;
+  --c-zinc-100: 242 236 251;
+  --c-zinc-200: 230 219 245;
+  --c-zinc-300: 208 194 232;
+  --c-zinc-400: 176 154 208;
+  --c-zinc-500: 138 111 181;
+  --c-zinc-600: 90 61 138;
+  --c-zinc-700: 45 26 77;
+  --c-zinc-800: 30 18 51;
+  --c-zinc-900: 18 10 31;
+  --c-zinc-950: 10 7 19;
+
+  /* Attention → neon yellow. */
+  --c-hive-400: 255 240 77;
+  --c-hive-500: 255 230 0;
+  --c-hive-600: 230 207 0;
+
+  /* Primary interactive → hot magenta. */
+  --c-accent-400: 255 110 199;
+  --c-accent-500: 255 62 165;
+  --c-accent-600: 224 31 139;
+
+  --c-green-400: 107 255 77;
+  --c-green-500: 57 255 20;
+  --c-amber-200: 255 232 163;
+  --c-amber-300: 255 210 77;
+  --c-amber-400: 255 198 26;
+  --c-amber-500: 255 179 0;
+  --c-amber-600: 230 150 0;
+  --c-red-200: 255 184 203;
+  --c-red-300: 255 138 168;
+  --c-red-400: 255 92 133;
+  --c-red-500: 255 41 101;
+  --c-red-900: 61 8 23;
+  --c-red-950: 38 4 14;
+  /* Info → cyan. */
+  --c-sky-400: 125 249 255;
+  --c-sky-500: 34 211 238;
+  --c-emerald-400: 57 255 20;
+}
+
+/* --- Modern Glossy: deep blue-black, glass panels, violet glow ---------- */
+:root[data-theme="glossy"] {
+  color-scheme: dark;
+  --font-sans: "IBM Plex Sans";
+  --font-mono: "IBM Plex Mono";
+
+  --c-zinc-50: 255 255 255;
+  --c-zinc-100: 238 240 246;
+  --c-zinc-200: 223 227 238;
+  --c-zinc-300: 194 200 219;
+  --c-zinc-400: 154 163 189;
+  --c-zinc-500: 126 136 163;
+  --c-zinc-600: 91 100 128;
+  --c-zinc-700: 51 58 79;
+  --c-zinc-800: 35 40 56;
+  --c-zinc-900: 21 24 36;
+  --c-zinc-950: 11 13 23;
+
+  --c-hive-400: 252 211 77;
+  --c-hive-500: 245 158 11;
+  --c-hive-600: 217 119 6;
+
+  /* Primary interactive → vibrant violet. */
+  --c-accent-400: 167 139 250;
+  --c-accent-500: 139 92 246;
+  --c-accent-600: 124 58 237;
+
+  --c-green-400: 74 222 128;
+  --c-green-500: 34 197 94;
+  --c-amber-200: 253 230 138;
+  --c-amber-300: 252 211 77;
+  --c-amber-400: 251 191 36;
+  --c-amber-500: 245 158 11;
+  --c-amber-600: 217 119 6;
+  --c-red-200: 254 202 202;
+  --c-red-300: 252 165 165;
+  --c-red-400: 248 113 113;
+  --c-red-500: 239 68 68;
+  --c-red-900: 127 29 29;
+  --c-red-950: 69 10 10;
+  --c-sky-400: 56 189 248;
+  --c-sky-500: 14 165 233;
+  --c-emerald-400: 52 211 153;
+}
+
+/* --- Minimalist Paper: light, ink on off-white, hairline rules ---------- */
+/* The neutral ramp inverts here: the "text" end (50–300) becomes dark ink and
+   the "surface" end (800–950) becomes light paper, so text-zinc-200 stays the
+   body color and bg-zinc-950 stays the page — just flipped in luminance. */
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --font-sans: "IBM Plex Sans";
+  --font-mono: "IBM Plex Mono";
+
+  --c-zinc-50: 26 26 23;
+  --c-zinc-100: 38 37 31;
+  --c-zinc-200: 51 50 42;
+  --c-zinc-300: 74 71 57;
+  --c-zinc-400: 111 102 90;
+  --c-zinc-500: 138 128 113;
+  --c-zinc-600: 163 154 134;
+  --c-zinc-700: 216 211 198;
+  --c-zinc-800: 230 226 216;
+  --c-zinc-900: 255 255 255;
+  --c-zinc-950: 242 240 233;
+
+  --c-hive-400: 201 154 58;
+  --c-hive-500: 176 125 30;
+  --c-hive-600: 143 100 20;
+
+  --c-accent-400: 91 122 158;
+  --c-accent-500: 63 95 133;
+  --c-accent-600: 47 74 107;
+
+  --c-green-400: 47 125 63;
+  --c-green-500: 58 138 74;
+  /* Amber/red text shades go dark (they sit on light tinted backgrounds); the
+     solid -500 stays saturated for dots and buttons; the -900/-950 "bg" shades
+     flip to light tints. */
+  --c-amber-200: 122 90 16;
+  --c-amber-300: 168 126 40;
+  --c-amber-400: 176 125 30;
+  --c-amber-500: 184 134 11;
+  --c-amber-600: 143 100 20;
+  --c-red-200: 143 45 36;
+  --c-red-300: 160 58 48;
+  --c-red-400: 176 57 43;
+  --c-red-500: 192 57 43;
+  --c-red-900: 243 214 210;
+  --c-red-950: 251 234 232;
+  --c-sky-400: 63 110 158;
+  --c-sky-500: 47 90 133;
+  --c-emerald-400: 47 125 63;
 }
 
 body {
@@ -11,16 +248,86 @@ body {
   font-size: 13px;
 }
 
-/* Cool-gray scrollbars to match the design. */
+/* Scrollbars follow the neutral ramp so they recolor with the theme. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #242a33;
+  background: rgb(var(--c-zinc-700));
   border-radius: 6px;
-  border: 2px solid #101216;
+  border: 2px solid rgb(var(--c-zinc-950));
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Per-theme effects (typography, corners, glow, CRT overlay)
+--------------------------------------------------------------------------- */
+
+/* Pixel themes: bump the small pixel type for legibility, square every corner,
+   and render bitmap art crisp. */
+:root[data-theme="fallout"] body,
+:root[data-theme="cyberpunk"] body {
+  font-size: 15.5px;
+  letter-spacing: 0.01em;
+}
+:root[data-theme="fallout"] *,
+:root[data-theme="cyberpunk"] * {
+  border-radius: 0 !important;
+  image-rendering: pixelated;
+}
+
+/* Fallout: phosphor glow + gentle CRT scanlines over the whole viewport. */
+:root[data-theme="fallout"] body {
+  text-shadow: 0 0 4px rgb(var(--c-accent-500) / 0.35);
+}
+:root[data-theme="cyberpunk"] body {
+  text-shadow: 0 0 5px rgb(var(--c-accent-500) / 0.3);
+}
+:root[data-theme="fallout"] body::after,
+:root[data-theme="cyberpunk"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.16) 0,
+    rgb(0 0 0 / 0.16) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Glossy: gradient backdrop, frosted-glass panels, soft depth. */
+:root[data-theme="glossy"] body {
+  background:
+    radial-gradient(
+      1200px 600px at 12% -10%,
+      rgb(var(--c-accent-600) / 0.16),
+      transparent 60%
+    ),
+    radial-gradient(
+      1000px 700px at 100% 0%,
+      rgb(var(--c-sky-500) / 0.1),
+      transparent 55%
+    ),
+    rgb(var(--c-zinc-950));
+  background-attachment: fixed;
+}
+:root[data-theme="glossy"] .rounded-xl,
+:root[data-theme="glossy"] .rounded-2xl {
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 10px 30px -12px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+/* Paper: kill the dark-theme shadows so it reads flat and printed. */
+:root[data-theme="paper"] .shadow-xl,
+:root[data-theme="paper"] .shadow-lg {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
 }
