@@ -983,6 +983,7 @@ function SubRow({ entry }: { entry: HomeEntry }) {
 // automatic value. Persisted server-side.
 function CardEditor({ entry }: { entry: HomeEntry }) {
   const qc = useQueryClient();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(entry.name);
   const [icon, setIcon] = useState(entry.icon ?? "");
@@ -1019,7 +1020,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
       await qc.invalidateQueries({ queryKey: ["home"] });
       setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save.");
+      setError(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setBusy(false);
     }
@@ -1043,7 +1044,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-xl">
           <label className="mb-1 block text-[11px] font-medium text-zinc-400">
-            Display name
+            {t("dashboard.displayName")}
           </label>
           <input
             autoFocus
@@ -1057,7 +1058,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
             className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
           />
           <label className="mb-1 mt-2 block text-[11px] font-medium text-zinc-400">
-            Icon URL or slug
+            {t("dashboard.iconUrl")}
           </label>
           <input
             value={icon}
@@ -1070,19 +1071,10 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
             className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
           />
           <p className="mt-1 text-[10px] leading-snug text-zinc-600">
-            Icon: a full image URL, or a{" "}
-            <a
-              href="https://github.com/homarr-labs/dashboard-icons"
-              target="_blank"
-              rel="noreferrer"
-              className="text-accent-500 hover:underline"
-            >
-              dashboard-icons
-            </a>{" "}
-            name. Leave a field empty to go back to automatic.
+            {t("dashboard.iconHelp")}
           </p>
           <label className="mb-1 mt-2 block text-[11px] font-medium text-zinc-400">
-            Link URL
+            {t("dashboard.linkUrl")}
           </label>
           <input
             value={url}
@@ -1095,9 +1087,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
             className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs outline-none focus:border-accent-500"
           />
           <p className="mt-1 text-[10px] leading-snug text-zinc-600">
-            Where the tile links. Set this for apps whose port HiveDock can’t
-            detect — host-network containers, or one sharing another’s network
-            (e.g. behind Gluetun). Empty = automatic.
+            {t("dashboard.linkHelp")}
           </p>
           <div className="mt-2 flex items-center gap-2">
             <button
@@ -1105,13 +1095,13 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
               disabled={busy}
               className="rounded-md bg-accent-600 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
             >
-              {busy ? "Saving…" : "Save"}
+              {busy ? t("common.saving") : t("common.save")}
             </button>
             <button
               onClick={() => setOpen(false)}
               className="ml-auto rounded-md px-2 py-1 text-xs text-zinc-500 hover:text-zinc-300"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
           {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}

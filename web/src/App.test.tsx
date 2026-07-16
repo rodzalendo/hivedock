@@ -120,7 +120,8 @@ test("navigating to Stacks shows the stacks list", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: /Stacks/i }));
   await waitFor(() => expect(screen.getByText("whoami")).toBeInTheDocument());
-  expect(screen.getByText("Managed")).toBeInTheDocument();
+  // "Managed" now appears both as the section header and the origin badge.
+  expect(screen.getAllByText("Managed").length).toBeGreaterThan(0);
 });
 
 test("sidebar shows backend health and version", async () => {

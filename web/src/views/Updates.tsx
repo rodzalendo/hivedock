@@ -11,7 +11,7 @@ import {
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
-import { useI18n } from "../i18n";
+import { useI18n, type TFunc } from "../i18n";
 
 // One planned compose rewrite awaiting the user's confirmation in the review
 // modal — the diff to show and the base hash to lock the apply to (§5.2).
@@ -256,7 +256,7 @@ export default function Updates() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
-            Updates
+            {t("nav.updates")}
           </h2>
           <p
             className={`mt-0.5 flex items-center gap-1.5 text-sm font-medium ${
@@ -270,7 +270,9 @@ export default function Updates() {
               aria-hidden
             />
             {available.length > 0
-              ? `${available.length} update${available.length === 1 ? "" : "s"} available`
+              ? available.length === 1
+                ? t("updates.oneAvailable")
+                : t("updates.manyAvailable", { n: available.length })
               : t("updates.allUpToDate")}
           </p>
         </div>
@@ -284,13 +286,13 @@ export default function Updates() {
           {!note && lastChecked && (
             <span
               className={`text-xs ${
-                timeAgo(lastChecked) === "just now"
+                Date.now() - lastChecked.getTime() < 60_000
                   ? "text-green-400"
                   : "text-zinc-600"
               }`}
               title={lastChecked.toLocaleString()}
             >
-              Last checked {timeAgo(lastChecked)}
+              {t("updates.lastChecked", { ago: timeAgo(lastChecked, t) })}
             </span>
           )}
           <button
@@ -317,7 +319,7 @@ export default function Updates() {
 
       {!isLoading && !isError && entries.length === 0 && (
         <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-sm text-zinc-500">
-          No managed stacks with images to check. Create a stack, then Check now.
+          {t("updates.empty")}
         </div>
       )}
 
@@ -346,14 +348,16 @@ export default function Updates() {
                   disabled={busy || selected.size === 0}
                   className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
                 >
-                  Update selected ({selected.size})
+                  {t("updates.updateSelected", { n: selected.size })}
                 </button>
                 <button
                   onClick={() => reviewMany(applicable)}
                   disabled={busy}
                   className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
                 >
-                  {busy ? "Updating…" : `Update all (${applicable.length})`}
+                  {busy
+                    ? t("updates.updating")
+                    : t("updates.updateAll", { n: applicable.length })}
                 </button>
               </div>
             )}
@@ -529,7 +533,7 @@ function UpdateRow({
         )}
         {entry.hasUpdate && entry.kind === "digest" && (
           <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-400">
-            new digest
+            {t("updates.newDigest")}
           </span>
         )}
         {!entry.hasUpdate && <StatusChip entry={entry} />}
@@ -542,10 +546,10 @@ function UpdateRow({
           >
             {applying && <SpinnerIcon className="h-3 w-3" />}
             {applying
-              ? "Updating…"
+              ? t("updates.updating")
               : entry.kind === "digest"
-                ? "Pull & redeploy"
-                : "Update & redeploy"}
+                ? t("updates.pullRedeploy")
+                : t("updates.updateRedeploy")}
           </button>
         )}
         {onIgnore && (
@@ -567,7 +571,7 @@ function UpdateRow({
       {open && (
         <div className="space-y-2 border-t border-zinc-800 px-4 py-3 text-xs text-zinc-400">
           <div>
-            <span className="text-zinc-500">Used by:</span>{" "}
+            <span className="text-zinc-500">{t("updates.usedBy")}</span>{" "}
             {entry.usedBy.map((u) => `${u.stack}/${u.service}`).join(", ")}
           </div>
           {entry.source && (
@@ -578,7 +582,7 @@ function UpdateRow({
                 rel="noreferrer"
                 className="text-accent-500 hover:underline"
               >
-                Changelog / source ↗
+                {t("updates.changelog")} ↗
               </a>
             </div>
           )}
@@ -591,7 +595,9 @@ function UpdateRow({
           )}
           {entry.checkedAt && (
             <div className="text-[11px] text-zinc-600">
-              Checked {new Date(entry.checkedAt).toLocaleString()}
+              {t("updates.checkedAt", {
+                when: new Date(entry.checkedAt).toLocaleString(),
+              })}
             </div>
           )}
         </div>
@@ -600,14 +606,15 @@ function UpdateRow({
   );
 }
 
-// timeAgo renders a compact relative time ("just now", "12m ago", "3h ago").
-function timeAgo(d: Date): string {
+// timeAgo renders a compact relative time ("just now", "12m ago", "3h ago"),
+// localized via the passed t().
+function timeAgo(d: Date, t: TFunc): string {
   const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("time.justNow");
+  if (mins < 60) return t("time.mAgo", { n: mins });
   const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) return t("time.hAgo", { n: hours });
+  return t("time.dAgo", { n: Math.floor(hours / 24) });
 }
 
 // usageLabel summarizes where an image is used: the distinct stack names, with
@@ -620,28 +627,29 @@ function usageLabel(usedBy: UpdateEntry["usedBy"]): string {
 }
 
 function StatusChip({ entry }: { entry: UpdateEntry }) {
+  const { t } = useI18n();
   // An unresolved env-var tag (e.g. redis:${REDIS_TAG}) can't be version-checked.
   if (entry.kind === "unsupported" && /\$[{(]/.test(entry.image)) {
     return (
       <span className="rounded bg-zinc-700/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-        env-managed
+        {t("updates.chip.envManaged")}
       </span>
     );
   }
-  const map: Record<string, { label: string; cls: string }> = {
-    uptodate: { label: "up to date", cls: "bg-green-500/15 text-green-400" },
-    unchecked: { label: "not checked", cls: "bg-zinc-700/40 text-zinc-400" },
-    error: { label: "error", cls: "bg-red-500/15 text-red-400" },
-    unsupported: { label: "unsupported", cls: "bg-zinc-700/40 text-zinc-500" },
-    digest: { label: "checked", cls: "bg-zinc-700/40 text-zinc-400" },
-    semver: { label: "up to date", cls: "bg-green-500/15 text-green-400" },
+  const map: Record<string, { key: string; cls: string }> = {
+    uptodate: { key: "updates.chip.uptodate", cls: "bg-green-500/15 text-green-400" },
+    unchecked: { key: "updates.chip.notChecked", cls: "bg-zinc-700/40 text-zinc-400" },
+    error: { key: "updates.chip.error", cls: "bg-red-500/15 text-red-400" },
+    unsupported: { key: "updates.chip.unsupported", cls: "bg-zinc-700/40 text-zinc-500" },
+    digest: { key: "updates.chip.checked", cls: "bg-zinc-700/40 text-zinc-400" },
+    semver: { key: "updates.chip.uptodate", cls: "bg-green-500/15 text-green-400" },
   };
-  const { label, cls } = map[entry.kind] ?? map.unchecked;
+  const { key, cls } = map[entry.kind] ?? map.unchecked;
   return (
     <span
       className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${cls}`}
     >
-      {label}
+      {t(key)}
     </span>
   );
 }

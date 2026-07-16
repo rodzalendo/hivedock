@@ -62,17 +62,14 @@ export default function Settings() {
           <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
             <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
               {t("settings.environment")}
-              <HelpTip>
-                Configured via environment variables (change requires a
-                container restart).
-              </HelpTip>
+              <HelpTip>{t("settings.environmentHelp")}</HelpTip>
             </h3>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
               <Row label={t("settings.env.stacksDir")} value={data.stacksDir} mono />
               <Row label={t("settings.env.dataDir")} value={data.dataDir} mono />
               <Row
                 label={t("settings.env.publicHost")}
-                value={data.publicHost || "(request host)"}
+                value={data.publicHost || t("settings.env.requestHost")}
               />
               <Row label={t("settings.env.auth")} value={data.authMode} />
               <Row label={t("settings.env.version")} value={data.version} mono />
@@ -115,7 +112,7 @@ function AppearanceSection() {
                   ? "border-accent-500 bg-accent-500/10"
                   : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/40"
               }`}
-              title={theme.blurb}
+              title={t(`theme.${theme.id}.blurb`)}
             >
               <span className="flex items-center gap-1.5">
                 <span
@@ -128,7 +125,7 @@ function AppearanceSection() {
                 />
                 {active && (
                   <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-accent-500">
-                    Active
+                    {t("common.active")}
                   </span>
                 )}
               </span>
@@ -136,7 +133,7 @@ function AppearanceSection() {
                 {theme.name}
               </span>
               <span className="text-[11px] leading-relaxed text-zinc-500">
-                {theme.blurb}
+                {t(`theme.${theme.id}.blurb`)}
               </span>
             </button>
           );
@@ -182,19 +179,19 @@ function IntervalSection({
 }) {
   const { t } = useI18n();
   const options = [
-    { value: "off", label: "Off" },
-    { value: "15m", label: "Every 15 minutes" },
-    { value: "30m", label: "Every 30 minutes" },
-    { value: "1h", label: "Every hour" },
-    { value: "3h", label: "Every 3 hours" },
-    { value: "6h", label: "Every 6 hours" },
-    { value: "12h", label: "Every 12 hours" },
-    { value: "24h", label: "Every 24 hours" },
+    "off",
+    "15m",
+    "30m",
+    "1h",
+    "3h",
+    "6h",
+    "12h",
+    "24h",
   ];
   // The server reports tidy duration strings ("30m", "6h") or "disabled".
   const normalized = current === "disabled" ? "off" : current;
   const [value, setValue] = useState(
-    options.some((o) => o.value === normalized) ? normalized : "30m",
+    options.includes(normalized) ? normalized : "30m",
   );
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -205,9 +202,9 @@ function IntervalSection({
     try {
       await saveSettings({ checkInterval: value });
       onSaved();
-      setNote("Saved — applies within a minute.");
+      setNote(t("settings.autoUpdateSaved"));
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to save.");
+      setNote(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setBusy(false);
     }
@@ -217,10 +214,7 @@ function IntervalSection({
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.autoUpdate")}
-        <HelpTip>
-          How often HiveDock checks registries for newer images in the
-          background. Changes apply within a minute, no restart needed.
-        </HelpTip>
+        <HelpTip>{t("settings.autoUpdateHelp")}</HelpTip>
       </h3>
       <div className="flex items-center gap-3">
         <select
@@ -229,8 +223,8 @@ function IntervalSection({
           className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-accent-500"
         >
           {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
+            <option key={o} value={o}>
+              {t(`settings.interval.${o}`)}
             </option>
           ))}
         </select>
@@ -239,7 +233,7 @@ function IntervalSection({
           disabled={busy}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
         >
-          Save
+          {t("common.save")}
         </button>
         {note && <span className="text-xs text-zinc-500">{note}</span>}
       </div>
@@ -258,22 +252,14 @@ function UpdateModeSection({
   onSaved: () => void;
 }) {
   const { t } = useI18n();
-  const options: { value: UpdateMode; label: string; desc: string }[] = [
-    {
-      value: "full",
-      label: "Full",
-      desc: "Check for new releases, verify their signatures, and allow one-click updates from the sidebar.",
-    },
+  const options: { value: UpdateMode; labelKey: string; descKey: string }[] = [
+    { value: "full", labelKey: "settings.updateMode.full", descKey: "settings.updateMode.fullDesc" },
     {
       value: "check-only",
-      label: "Check only",
-      desc: "Check and verify, but never apply automatically — update manually from a shell.",
+      labelKey: "settings.updateMode.checkOnly",
+      descKey: "settings.updateMode.checkOnlyDesc",
     },
-    {
-      value: "off",
-      label: "Off",
-      desc: "No version check at all (for air-gapped installs).",
-    },
+    { value: "off", labelKey: "settings.updateMode.off", descKey: "settings.updateMode.offDesc" },
   ];
   const [value, setValue] = useState<UpdateMode>(current);
   const [busy, setBusy] = useState(false);
@@ -285,9 +271,9 @@ function UpdateModeSection({
     try {
       await saveSettings({ updateMode: value });
       onSaved();
-      setNote("Saved.");
+      setNote(t("settings.saved"));
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to save.");
+      setNote(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setBusy(false);
     }
@@ -297,11 +283,7 @@ function UpdateModeSection({
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.selfUpdate")}
-        <HelpTip>
-          Release images are cosign-signed via GitHub Actions. HiveDock verifies
-          that signature and pins the exact digest before offering or applying
-          an update to itself.
-        </HelpTip>
+        <HelpTip>{t("settings.selfUpdateHelp")}</HelpTip>
       </h3>
       <div className="space-y-2">
         {options.map((o) => (
@@ -318,9 +300,9 @@ function UpdateModeSection({
               className="mt-0.5 accent-accent-600"
             />
             <span>
-              <span className="text-sm text-zinc-200">{o.label}</span>
+              <span className="text-sm text-zinc-200">{t(o.labelKey)}</span>
               <span className="block text-[11px] leading-relaxed text-zinc-500">
-                {o.desc}
+                {t(o.descKey)}
               </span>
             </span>
           </label>
@@ -332,7 +314,7 @@ function UpdateModeSection({
           disabled={busy}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
         >
-          Save
+          {t("common.save")}
         </button>
         {note && <span className="text-xs text-zinc-500">{note}</span>}
       </div>
@@ -361,9 +343,9 @@ function GitSection({
     try {
       await initGitRepo();
       onSaved();
-      setNote("Initialized. Turn on version history to start recording changes.");
+      setNote(t("settings.git.initialized"));
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to initialize.");
+      setNote(err instanceof Error ? err.message : t("settings.git.failedInit"));
     } finally {
       setBusy(false);
     }
@@ -375,9 +357,9 @@ function GitSection({
     try {
       await saveSettings({ gitAutoCommit: next });
       onSaved();
-      setNote(next ? "On — changes are now committed locally." : "Off.");
+      setNote(next ? t("settings.git.on") : t("settings.git.off"));
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to save.");
+      setNote(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setBusy(false);
     }
@@ -387,11 +369,7 @@ function GitSection({
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.versionHistory")}
-        <HelpTip>
-          Records every change under your stacks directory to a local git repo —
-          HiveDock&apos;s own edits and changes made outside the UI alike. Local
-          only: no remotes, no pushing. Useful for auditing and rollback.
-        </HelpTip>
+        <HelpTip>{t("settings.git.help")}</HelpTip>
       </h3>
       {data.gitWorktree ? (
         <label className="flex cursor-pointer items-start gap-2.5">
@@ -403,28 +381,23 @@ function GitSection({
             className="mt-0.5 accent-accent-600"
           />
           <span>
-            <span className="text-sm text-zinc-200">
-              Commit stack changes to git
-            </span>
+            <span className="text-sm text-zinc-200">{t("settings.git.toggle")}</span>
             <span className="block text-[11px] leading-relaxed text-zinc-500">
-              A snapshot commit captures any out-of-band change first, then each
-              HiveDock write is its own commit (authored “HiveDock”).
+              {t("settings.git.toggleDesc")}
             </span>
           </span>
         </label>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-[11px] leading-relaxed text-zinc-500">
-            Your stacks directory{" "}
-            <code className="font-mono text-zinc-400">{data.stacksDir}</code> is
-            not a git repository yet.
+            {t("settings.git.notRepo", { dir: data.stacksDir })}
           </p>
           <button
             onClick={onInit}
             disabled={busy}
             className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
           >
-            {busy ? "Initializing…" : "Initialize git repository"}
+            {busy ? t("settings.git.initializing") : t("settings.git.init")}
           </button>
         </div>
       )}
@@ -454,7 +427,7 @@ function ApiTokenSection({
       setToken(await generateApiToken());
       onChanged();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to generate.");
+      setNote(err instanceof Error ? err.message : t("settings.token.failedGen"));
     } finally {
       setBusy(false);
     }
@@ -467,9 +440,9 @@ function ApiTokenSection({
     try {
       await revokeApiToken();
       onChanged();
-      setNote("Token revoked.");
+      setNote(t("settings.token.revoked"));
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to revoke.");
+      setNote(err instanceof Error ? err.message : t("settings.token.failedRevoke"));
     } finally {
       setBusy(false);
     }
@@ -479,19 +452,12 @@ function ApiTokenSection({
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.apiToken")}
-        <HelpTip>
-          A bearer token for monitoring tools (uptime-kuma, gatus, scripts). It
-          works only on <code>GET /api/health</code>, <code>/api/stacks</code>,
-          and <code>/api/updates</code> — never mutations or settings. Stored as
-          a hash; shown once.
-        </HelpTip>
+        <HelpTip>{t("settings.token.help")}</HelpTip>
       </h3>
 
       {token ? (
         <div className="space-y-2">
-          <p className="text-[11px] text-amber-400">
-            Copy it now — it won&apos;t be shown again.
-          </p>
+          <p className="text-[11px] text-amber-400">{t("settings.token.copyNow")}</p>
           <div className="flex items-center gap-2">
             <code className="flex-1 break-all rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-200">
               {token}
@@ -500,7 +466,7 @@ function ApiTokenSection({
               onClick={() => void navigator.clipboard?.writeText(token)}
               className="rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 transition hover:bg-zinc-800"
             >
-              Copy
+              {t("settings.token.copy")}
             </button>
           </div>
         </div>
@@ -511,7 +477,7 @@ function ApiTokenSection({
             disabled={busy}
             className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
           >
-            {tokenSet ? "Regenerate token" : "Generate token"}
+            {tokenSet ? t("settings.token.regenerate") : t("settings.token.generate")}
           </button>
           {tokenSet && (
             <button
@@ -519,11 +485,11 @@ function ApiTokenSection({
               disabled={busy}
               className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:text-red-400 disabled:opacity-50"
             >
-              Revoke
+              {t("settings.token.revoke")}
             </button>
           )}
           <span className="text-[11px] text-zinc-500">
-            {tokenSet ? "A token is active." : "No token yet."}
+            {tokenSet ? t("settings.token.active") : t("settings.token.none")}
           </span>
         </div>
       )}
@@ -572,7 +538,7 @@ function RegistriesSection() {
       setInsecure(false);
       refetch();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to save.");
+      setNote(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setBusy(false);
     }
@@ -585,7 +551,7 @@ function RegistriesSection() {
       await deleteRegistry(h);
       refetch();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Failed to remove.");
+      setNote(err instanceof Error ? err.message : t("settings.reg.failedRemove"));
     } finally {
       setBusy(false);
     }
@@ -595,12 +561,7 @@ function RegistriesSection() {
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.registries")}
-        <HelpTip>
-          Credentials for private registries and TLS trust for self-signed ones.
-          Only registries listed here get credentials — everything else stays
-          anonymous with strict TLS. Passwords are stored under DATA_DIR (not
-          encrypted at rest) and never shown again.
-        </HelpTip>
+        <HelpTip>{t("settings.reg.help")}</HelpTip>
       </h3>
 
       {registries.length > 0 && (
@@ -623,7 +584,7 @@ function RegistriesSection() {
       <div className="grid gap-2 sm:grid-cols-2">
         <input
           className={inputCls}
-          placeholder="registry host (registry.example.com)"
+          placeholder={t("settings.reg.hostPh")}
           value={host}
           onChange={(e) => setHost(e.target.value)}
           autoComplete="off"
@@ -631,7 +592,7 @@ function RegistriesSection() {
         <input
           className={inputCls}
           name="registry-username"
-          placeholder="username (optional)"
+          placeholder={t("settings.reg.userPh")}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="off"
@@ -640,14 +601,14 @@ function RegistriesSection() {
           className={inputCls}
           name="registry-secret"
           type="password"
-          placeholder="password / token (optional)"
+          placeholder={t("settings.reg.passPh")}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
         />
         <input
           className={inputCls}
-          placeholder="CA bundle path (optional)"
+          placeholder={t("settings.reg.caPh")}
           value={caBundlePath}
           onChange={(e) => setCaBundlePath(e.target.value)}
           autoComplete="off"
@@ -661,14 +622,14 @@ function RegistriesSection() {
             onChange={(e) => setInsecure(e.target.checked)}
             className="accent-accent-600"
           />
-          Skip TLS verification (self-signed)
+          {t("settings.reg.skipTls")}
         </label>
         <button
           onClick={onAdd}
           disabled={busy || !host.trim()}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-50"
         >
-          Add / update
+          {t("settings.reg.add")}
         </button>
         {note && <span className="text-xs text-zinc-500">{note}</span>}
       </div>
@@ -685,15 +646,16 @@ function RegistryRow({
   disabled: boolean;
   onRemove: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <li className="flex items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm">
       <div className="min-w-0">
         <span className="font-mono text-[13px] text-zinc-200">{r.host}</span>
         <span className="ml-2 text-[11px] text-zinc-500">
-          {r.username ? `as ${r.username}` : "anonymous"}
-          {r.hasPassword ? " · password set" : ""}
-          {r.caBundlePath ? " · custom CA" : ""}
-          {r.insecure ? " · TLS off" : ""}
+          {r.username ? t("settings.reg.as", { user: r.username }) : t("settings.reg.anonymous")}
+          {r.hasPassword ? ` · ${t("settings.reg.passwordSet")}` : ""}
+          {r.caBundlePath ? ` · ${t("settings.reg.customCa")}` : ""}
+          {r.insecure ? ` · ${t("settings.reg.tlsOff")}` : ""}
         </span>
       </div>
       <button
@@ -701,7 +663,7 @@ function RegistryRow({
         disabled={disabled}
         className="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 transition hover:text-red-400 disabled:opacity-50"
       >
-        Remove
+        {t("common.remove")}
       </button>
     </li>
   );
@@ -721,15 +683,14 @@ function PruneSection() {
     try {
       const rep = await pruneSystem();
       const mb = rep.spaceReclaimed / (1024 * 1024);
+      const size = mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`;
       setResult(
         rep.imagesDeleted === 0 && rep.spaceReclaimed === 0
-          ? "Nothing to prune — already clean."
-          : `Removed ${rep.imagesDeleted} dangling image${rep.imagesDeleted === 1 ? "" : "s"}, reclaimed ${
-              mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(0)} MB`
-            }.`,
+          ? t("settings.prune.nothing")
+          : t("settings.prune.removed", { n: rep.imagesDeleted, size }),
       );
     } catch (err) {
-      setResult(err instanceof Error ? err.message : "Prune failed.");
+      setResult(err instanceof Error ? err.message : t("settings.prune.failed"));
     } finally {
       setBusy(false);
     }
@@ -739,12 +700,7 @@ function PruneSection() {
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
         {t("settings.maintenance")}
-        <HelpTip>
-          Image updates leave the old, now-untagged image layers behind on
-          disk. Prune removes those dangling images and stale build cache. It
-          never touches tagged images, containers, volumes, or networks, so it
-          is safe to run any time.
-        </HelpTip>
+        <HelpTip>{t("settings.prune.help")}</HelpTip>
       </h3>
       <div className="flex items-center gap-3">
         <button
@@ -753,7 +709,7 @@ function PruneSection() {
           className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
         >
           {busy && <SpinnerIcon className="h-3.5 w-3.5" />}
-          {busy ? "Pruning…" : "Prune dangling images"}
+          {busy ? t("settings.prune.pruning") : t("settings.prune.button")}
         </button>
         {result && <span className="text-xs text-zinc-500">{result}</span>}
       </div>

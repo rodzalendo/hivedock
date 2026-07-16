@@ -143,9 +143,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
       </div>
 
       {phase === "idle" && lines.length === 0 ? (
-        <p className="text-xs text-zinc-600">
-          Run an operation to see its live output here.
-        </p>
+        <p className="text-xs text-zinc-600">{t("stacks.runOp")}</p>
       ) : (
         <div>
           <div className="mb-1.5 flex items-center gap-2 text-xs">
@@ -160,7 +158,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             className="max-h-72 overflow-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed text-zinc-300"
           >
             {lines.length === 0 && running && (
-              <span className="text-zinc-600">Starting…</span>
+              <span className="text-zinc-600">{t("stacks.starting")}</span>
             )}
             {lines.map((l, i) => (
               <div key={i} className="whitespace-pre-wrap break-all">

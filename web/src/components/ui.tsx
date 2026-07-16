@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, StackStatus } from "../api";
+import { useI18n } from "../i18n";
 
 const statusColor: Record<StackStatus, string> = {
   running: "bg-green-500",
@@ -215,6 +216,7 @@ export function WrapToggle({
 }
 
 export function OriginBadge({ origin }: { origin: Origin }) {
+  const { t } = useI18n();
   const managed = origin === "managed";
   return (
     <span
@@ -229,7 +231,7 @@ export function OriginBadge({ origin }: { origin: Origin }) {
           : "Running but not managed by HiveDock — read-only"
       }
     >
-      {origin}
+      {managed ? t("stacks.managed") : t("stacks.external")}
     </span>
   );
 }

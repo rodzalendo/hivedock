@@ -19,6 +19,7 @@ import {
   ServiceDot,
   StatusDot,
 } from "../components/ui";
+import { useI18n } from "../i18n";
 import { PencilIcon, RestartIcon, SpinnerIcon, TrashIcon } from "../components/icons";
 import HostStrip from "../components/HostStrip";
 import { useHashRoute, navigate } from "../useHashRoute";
@@ -28,6 +29,7 @@ import ComposeEditor from "../components/ComposeEditor";
 import EnvEditor from "../components/EnvEditor";
 
 export default function Stacks() {
+  const { t } = useI18n();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["stacks"],
     queryFn: fetchStacks,
@@ -103,7 +105,7 @@ export default function Stacks() {
         )}
 
         {managed.length > 0 && (
-          <Group title="Managed">
+          <Group title={t("stacks.managed")}>
             {managed.map((s) => (
               <StackRow
                 key={s.name}
@@ -117,7 +119,7 @@ export default function Stacks() {
         )}
 
         {external.length > 0 && (
-          <Group title="External (read-only)">
+          <Group title={t("stacks.external")}>
             {external.map((s) => (
               <StackRow
                 key={s.name}
@@ -164,6 +166,7 @@ function NewStack({
   onCreate: (name: string) => Promise<void>;
   existing: string[];
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -200,7 +203,7 @@ function NewStack({
         onClick={() => setOpen(true)}
         className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300 transition hover:bg-zinc-800"
       >
-        + New
+        + {t("stacks.new")}
       </button>
     );
   }

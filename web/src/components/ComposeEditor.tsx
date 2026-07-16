@@ -169,7 +169,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           {t("stacks.revert")}
         </button>
         <span className="ml-auto text-[11px] text-zinc-600">
-          Save writes the file; it does not redeploy.
+          {t("stacks.saveNote")}
         </span>
       </div>
 
