@@ -33,8 +33,9 @@ type Entry struct {
 	StackSlug     string     `json:"stackSlug,omitempty"` // normalized stack name — icon fallback when the image slug has no asset
 	Icon          string     `json:"icon,omitempty"`      // explicit icon label (user override or label) if set
 	Description   string     `json:"description,omitempty"`
-	Status        string     `json:"status"` // running | stopped | ...
-	Hidden        bool       `json:"hidden"` // auto/label-hidden (UI may still reveal via toggle)
+	Status        string     `json:"status"`           // running | stopped | ...
+	Health        string     `json:"health,omitempty"` // healthy/unhealthy/starting ("" = no health check)
+	Hidden        bool       `json:"hidden"`           // auto/label-hidden (UI may still reveal via toggle)
 	// Sidecar marks a visible service that belongs under its stack's primary
 	// card (e.g. immich-machine-learning under immich-server). The dashboard
 	// rolls sidecars up behind the primary card's expander instead of giving
@@ -150,6 +151,7 @@ func resolveOne(st stacks.Stack, svc stacks.Service, candidates int, opts Option
 		StackSlug:     normalizeImage(st.Name),
 		Description:   firstLabel(l, "hivedock.description", "homepage.description"),
 		Status:        svc.State,
+		Health:        svc.Health,
 		Hidden:        isHidden(st, svc, opts),
 	}
 	return e

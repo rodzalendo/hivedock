@@ -26,6 +26,7 @@ export interface Service {
   runningImage?: string;
   state: string; // running | exited | created | absent | ...
   status?: string;
+  health?: string; // healthy | unhealthy | starting ("" / undefined = no health check)
   drifted?: boolean;
   containerId?: string;
   ports?: Port[];
@@ -139,6 +140,7 @@ export interface HomeEntry {
   icon?: string; // explicit icon label (may be a URL or a slug)
   description?: string;
   status: string;
+  health?: string; // healthy | unhealthy | starting ("" / undefined = no health check)
   hidden: boolean;
   sidecar?: boolean; // visible helper service rolled up under its stack's primary card
 }

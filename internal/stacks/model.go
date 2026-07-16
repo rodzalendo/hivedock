@@ -49,6 +49,7 @@ type Service struct {
 	RunningImage string        `json:"runningImage,omitempty"` // actual image on the container
 	State        string        `json:"state"`                  // running/exited/created/... or "absent"
 	Status       string        `json:"status,omitempty"`
+	Health       string        `json:"health,omitempty"`  // healthy/unhealthy/starting ("" = no health check)
 	Drifted      bool          `json:"drifted,omitempty"` // this service's running config-hash != file
 	ContainerID  string        `json:"containerId,omitempty"`
 	Ports        []docker.Port `json:"ports,omitempty"`
@@ -226,6 +227,7 @@ func indexByService(cts []docker.Container) map[string]docker.Container {
 func applyContainer(svc *Service, ct docker.Container) {
 	svc.State = ct.State
 	svc.Status = ct.Status
+	svc.Health = ct.Health
 	svc.ContainerID = shortID(ct.ID)
 	svc.RunningImage = ct.Image
 	svc.Ports = ct.Ports

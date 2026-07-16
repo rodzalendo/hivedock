@@ -18,20 +18,55 @@ export function StatusDot({ status }: { status: StackStatus }) {
   );
 }
 
-// A per-service state dot (running/exited/absent/...).
-export function ServiceDot({ state }: { state: string }) {
+// A per-service state dot (running/exited/absent/...). A failing or still-
+// starting health check overrides the color so a running-but-unhealthy
+// container doesn't read as a healthy green.
+export function ServiceDot({
+  state,
+  health,
+}: {
+  state: string;
+  health?: string;
+}) {
   const color =
-    state === "running"
-      ? "bg-green-500"
-      : state === "absent"
-        ? "bg-zinc-700"
-        : "bg-amber-500";
+    health === "unhealthy"
+      ? "bg-red-500"
+      : health === "starting"
+        ? "bg-amber-500"
+        : state === "running"
+          ? "bg-green-500"
+          : state === "absent"
+            ? "bg-zinc-700"
+            : "bg-amber-500";
+  const label = health ? `${state} (${health})` : state;
   return (
     <span
       className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`}
-      title={state}
-      aria-label={state}
+      title={label}
+      aria-label={label}
     />
+  );
+}
+
+// HealthBadge surfaces a container's health-check result. It renders nothing for
+// healthy containers or ones without a health check — only the states worth
+// flagging (a running-but-failing container, or one still warming up).
+export function HealthBadge({ health }: { health?: string }) {
+  if (health !== "unhealthy" && health !== "starting") return null;
+  const unhealthy = health === "unhealthy";
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+        unhealthy ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"
+      }`}
+      title={
+        unhealthy
+          ? "The container is running but its health check is failing"
+          : "The container is running but its health check is still starting"
+      }
+    >
+      {unhealthy ? "unhealthy" : "starting"}
+    </span>
   );
 }
 

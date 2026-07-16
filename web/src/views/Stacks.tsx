@@ -14,6 +14,7 @@ import {
 import {
   DriftBadge,
   DriftInfo,
+  HealthBadge,
   OriginBadge,
   ServiceDot,
   StatusDot,
@@ -291,6 +292,7 @@ function StackRow({
   onClick: () => void;
 }) {
   const running = stack.services.filter((s) => s.state === "running").length;
+  const unhealthy = stack.services.some((s) => s.health === "unhealthy");
   return (
     <li>
       <button
@@ -310,6 +312,14 @@ function StackRow({
               title="An image update is available for this stack"
             >
               update
+            </span>
+          )}
+          {unhealthy && (
+            <span
+              className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-400"
+              title="A container in this stack is running but unhealthy"
+            >
+              unhealthy
             </span>
           )}
           {stack.drifted && <DriftBadge />}
@@ -369,6 +379,14 @@ function StackDetail({
             />
           )}
           <span className="text-xs capitalize text-zinc-500">{stack.status}</span>
+          {services.some((s) => s.health === "unhealthy") && (
+            <span
+              className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-400"
+              title="A container in this stack is running but unhealthy"
+            >
+              unhealthy
+            </span>
+          )}
           {managed && (
             <div className="ml-auto">
               <StackActions
@@ -663,8 +681,9 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
       <td className="py-2 pr-4 font-mono text-xs text-zinc-400">{svc.image}</td>
       <td className="py-2 pr-4">
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-300">
-          <ServiceDot state={svc.state} />
+          <ServiceDot state={svc.state} health={svc.health} />
           {svc.state}
+          <HealthBadge health={svc.health} />
         </span>
       </td>
       <td className="py-2 pr-4 text-xs text-zinc-400">

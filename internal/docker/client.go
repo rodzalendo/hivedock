@@ -139,6 +139,7 @@ type Container struct {
 	Image      string
 	State      string // running, exited, created, paused, ...
 	Status     string // human-readable ("Up 3 hours")
+	Health     string // health-check state: healthy/unhealthy/starting ("" = no check)
 	Ports      []Port
 	Labels     map[string]string
 	Project    string // compose project ("" if not compose-managed)
@@ -146,6 +147,23 @@ type Container struct {
 	WorkingDir string // compose project working_dir (absolute)
 	ConfigHash string // compose per-service config hash (drift detection)
 	Oneoff     bool   // compose one-off container (`compose run`); excluded from stack views
+}
+
+// parseHealth extracts the health-check state from the human status string the
+// container list reports (e.g. "Up 5 minutes (unhealthy)"). Docker only appends
+// the parenthetical when the image/compose defines a HEALTHCHECK, so "" means
+// no health check — not healthy. It avoids a per-container inspect call.
+func parseHealth(status string) string {
+	switch {
+	case strings.Contains(status, "(healthy)"):
+		return "healthy"
+	case strings.Contains(status, "(unhealthy)"):
+		return "unhealthy"
+	case strings.Contains(status, "(health: starting)"):
+		return "starting"
+	default:
+		return ""
+	}
 }
 
 // Events streams Docker daemon events (container lifecycle etc.) until ctx is
@@ -295,6 +313,7 @@ func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 			Image:      ct.Image,
 			State:      ct.State,
 			Status:     ct.Status,
+			Health:     parseHealth(ct.Status),
 			Ports:      ports,
 			Labels:     labels,
 			Project:    labels[LabelProject],

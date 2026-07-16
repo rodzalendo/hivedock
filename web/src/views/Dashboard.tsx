@@ -812,7 +812,7 @@ function Card({
           <span className={`truncate font-medium text-zinc-100 ${tile.name}`}>
             {entry.name}
           </span>
-          <StatusDotSmall status={entry.status} />
+          <StatusDotSmall status={entry.status} health={entry.health} />
         </div>
         {tile.showSub && (
           <div className={`truncate text-zinc-500 ${tile.sub}`}>
@@ -925,7 +925,7 @@ function SubRow({ entry }: { entry: HomeEntry }) {
       <span className="truncate text-xs text-zinc-300">{entry.name}</span>
       <span className="truncate font-mono text-[10px] text-zinc-600">{entry.service}</span>
       <span className="flex-1" />
-      <StatusDotSmall status={entry.status} />
+      <StatusDotSmall status={entry.status} health={entry.health} />
     </>
   );
   return (
@@ -1078,8 +1078,17 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
   );
 }
 
-function StatusDotSmall({ status }: { status: string }) {
+function StatusDotSmall({ status, health }: { status: string; health?: string }) {
   const color =
-    status === "running" ? "bg-green-500" : status === "absent" ? "bg-zinc-600" : "bg-amber-500";
-  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} title={status} />;
+    health === "unhealthy"
+      ? "bg-red-500"
+      : health === "starting"
+        ? "bg-amber-500"
+        : status === "running"
+          ? "bg-green-500"
+          : status === "absent"
+            ? "bg-zinc-600"
+            : "bg-amber-500";
+  const label = health ? `${status} (${health})` : status;
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${color}`} title={label} />;
 }
