@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { runStackAction, type StackAction } from "../api";
 import { DownloadIcon, PlayIcon, RestartIcon, StopIcon } from "./icons";
+import { ProgressBar } from "./ui";
 
 interface DeployMessage {
   type: string;
@@ -146,6 +147,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
               <span className="font-mono text-zinc-500">docker compose {action}</span>
             )}
           </div>
+          {running && <ProgressBar indeterminate className="mb-1.5" />}
           <div
             ref={paneRef}
             className="max-h-72 overflow-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed text-zinc-300"

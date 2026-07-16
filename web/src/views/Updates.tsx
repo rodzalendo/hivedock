@@ -10,7 +10,7 @@ import {
   type UpdateEntry,
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
-import { HelpTip } from "../components/ui";
+import { HelpTip, ProgressBar } from "../components/ui";
 
 // One planned compose rewrite awaiting the user's confirmation in the review
 // modal — the diff to show and the base hash to lock the apply to (§5.2).
@@ -39,6 +39,14 @@ export default function Updates() {
   const [note, setNote] = useState<string | null>(null);
   const [applyingImages, setApplyingImages] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Redeploy progress across an apply: how many of the affected stacks have
+  // finished (driven by deploy:end events). Null when no apply is in flight.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  // The set of stacks still redeploying; a ref so the deploy:end listener can
+  // read it without re-subscribing.
+  const progressStacks = useRef<Set<string>>(new Set());
   // The pending review: compose diffs to confirm before anything is written.
   const [review, setReview] = useState<PlannedEdit[] | null>(null);
 
@@ -49,12 +57,33 @@ export default function Updates() {
     const done = () => {
       setChecking(false);
       setApplyingImages(new Set());
+      // The post-apply re-check is the true end of an update, so retire the
+      // progress bar here too.
+      setProgress(null);
+      progressStacks.current.clear();
       // Clear any progress note ("Checking N images…") so the header falls
       // back to "Last checked just now" instead of a stale in-progress line.
       setNote(null);
     };
     window.addEventListener("hivedock:updates", done);
     return () => window.removeEventListener("hivedock:updates", done);
+  }, []);
+
+  // Advance the redeploy progress bar as each affected stack's deploy ends.
+  useEffect(() => {
+    const onDeploy = (ev: Event) => {
+      const msg = (ev as CustomEvent).detail as {
+        type: string;
+        payload?: { stack?: string };
+      };
+      if (msg.type !== "deploy:end" || !msg.payload?.stack) return;
+      if (!progressStacks.current.delete(msg.payload.stack)) return;
+      setProgress((p) =>
+        p ? { ...p, done: p.total - progressStacks.current.size } : p,
+      );
+    };
+    window.addEventListener("hivedock:deploy", onDeploy);
+    return () => window.removeEventListener("hivedock:deploy", onDeploy);
   }, []);
 
   const qc = useQueryClient();
@@ -164,6 +193,8 @@ export default function Updates() {
     setNote(null);
     try {
       const stacks = [...new Set(e.usedBy.map((u) => u.stack))];
+      progressStacks.current = new Set(stacks);
+      setProgress({ done: 0, total: stacks.length });
       for (const s of stacks) {
         pendingStacks.current.add(s);
         await runStackAction(s, "update");
@@ -225,6 +256,8 @@ export default function Updates() {
         await applyUpdate(e.stack, e.service, e.tag, e.sha256);
         stacks.add(e.stack);
       }
+      progressStacks.current = new Set(stacks);
+      setProgress({ done: 0, total: stacks.size });
       for (const s of stacks) {
         await runStackAction(s, "up");
       }
@@ -273,13 +306,13 @@ export default function Updates() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {note && (
+          {note && !progress && (
             <span className="flex items-center gap-1.5 text-xs text-zinc-500">
               {busy && <SpinnerIcon className="h-3.5 w-3.5 text-hive-500" />}
               {note}
             </span>
           )}
-          {!note && lastChecked && (
+          {!note && !progress && lastChecked && (
             <span
               className={`text-xs ${
                 timeAgo(lastChecked) === "just now"
@@ -305,6 +338,28 @@ export default function Updates() {
           </button>
         </div>
       </div>
+
+      {progress && (
+        <div className="rounded-lg border border-hive-500/30 bg-hive-500/[0.06] px-4 py-3">
+          <div className="mb-1.5 flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1.5 font-medium text-hive-500">
+              <SpinnerIcon className="h-3.5 w-3.5" />
+              {progress.done >= progress.total
+                ? "Finishing up — re-checking versions…"
+                : "Pulling images & redeploying…"}
+            </span>
+            <span className="font-mono text-zinc-500">
+              {progress.done}/{progress.total} stack
+              {progress.total === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ProgressBar
+            tone="hive"
+            value={progress.total ? progress.done / progress.total : 0}
+            indeterminate={progress.done >= progress.total}
+          />
+        </div>
+      )}
 
       {isLoading && <p className="text-sm text-zinc-500">Loading…</p>}
       {isError && (
