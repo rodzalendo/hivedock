@@ -61,18 +61,21 @@ export default function Settings() {
 
           <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
             <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-              Environment
+              {t("settings.environment")}
               <HelpTip>
                 Configured via environment variables (change requires a
                 container restart).
               </HelpTip>
             </h3>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
-              <Row label="Stacks directory" value={data.stacksDir} mono />
-              <Row label="Data directory" value={data.dataDir} mono />
-              <Row label="Public host" value={data.publicHost || "(request host)"} />
-              <Row label="Authentication" value={data.authMode} />
-              <Row label="Version" value={data.version} mono />
+              <Row label={t("settings.env.stacksDir")} value={data.stacksDir} mono />
+              <Row label={t("settings.env.dataDir")} value={data.dataDir} mono />
+              <Row
+                label={t("settings.env.publicHost")}
+                value={data.publicHost || "(request host)"}
+              />
+              <Row label={t("settings.env.auth")} value={data.authMode} />
+              <Row label={t("settings.env.version")} value={data.version} mono />
             </dl>
           </section>
         </div>
@@ -100,28 +103,28 @@ function AppearanceSection() {
         <HelpTip>{t("settings.appearanceHelp")}</HelpTip>
       </h3>
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        {THEMES.map((t) => {
-          const active = t.id === current;
+        {THEMES.map((theme) => {
+          const active = theme.id === current;
           return (
             <button
-              key={t.id}
-              onClick={() => pick(t.id)}
+              key={theme.id}
+              onClick={() => pick(theme.id)}
               aria-pressed={active}
               className={`group flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
                 active
                   ? "border-accent-500 bg-accent-500/10"
                   : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/40"
               }`}
-              title={t.blurb}
+              title={theme.blurb}
             >
               <span className="flex items-center gap-1.5">
                 <span
                   className="h-5 w-5 shrink-0 rounded border border-black/20"
-                  style={{ background: t.swatch[0] }}
+                  style={{ background: theme.swatch[0] }}
                 />
                 <span
                   className="h-5 w-5 shrink-0 rounded border border-black/20"
-                  style={{ background: t.swatch[1] }}
+                  style={{ background: theme.swatch[1] }}
                 />
                 {active && (
                   <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-accent-500">
@@ -130,10 +133,10 @@ function AppearanceSection() {
                 )}
               </span>
               <span className="text-[13px] font-medium text-zinc-200">
-                {t.name}
+                {theme.name}
               </span>
               <span className="text-[11px] leading-relaxed text-zinc-500">
-                {t.blurb}
+                {theme.blurb}
               </span>
             </button>
           );
@@ -177,6 +180,7 @@ function IntervalSection({
   current: string;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const options = [
     { value: "off", label: "Off" },
     { value: "15m", label: "Every 15 minutes" },
@@ -212,7 +216,7 @@ function IntervalSection({
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Automatic update check
+        {t("settings.autoUpdate")}
         <HelpTip>
           How often HiveDock checks registries for newer images in the
           background. Changes apply within a minute, no restart needed.
@@ -253,6 +257,7 @@ function UpdateModeSection({
   current: UpdateMode;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const options: { value: UpdateMode; label: string; desc: string }[] = [
     {
       value: "full",
@@ -291,7 +296,7 @@ function UpdateModeSection({
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        HiveDock self-update
+        {t("settings.selfUpdate")}
         <HelpTip>
           Release images are cosign-signed via GitHub Actions. HiveDock verifies
           that signature and pins the exact digest before offering or applying
@@ -346,6 +351,7 @@ function GitSection({
   data: SettingsData;
   onSaved: () => void;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -380,7 +386,7 @@ function GitSection({
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Version history
+        {t("settings.versionHistory")}
         <HelpTip>
           Records every change under your stacks directory to a local git repo —
           HiveDock&apos;s own edits and changes made outside the UI alike. Local
@@ -436,6 +442,7 @@ function ApiTokenSection({
   tokenSet: boolean;
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -471,7 +478,7 @@ function ApiTokenSection({
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Read-only API token
+        {t("settings.apiToken")}
         <HelpTip>
           A bearer token for monitoring tools (uptime-kuma, gatus, scripts). It
           works only on <code>GET /api/health</code>, <code>/api/stacks</code>,
@@ -532,6 +539,7 @@ const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-200 outline-none focus:border-accent-500";
 
 function RegistriesSection() {
+  const { t } = useI18n();
   const { data, refetch } = useQuery({
     queryKey: ["registries"],
     queryFn: fetchRegistries,
@@ -586,7 +594,7 @@ function RegistriesSection() {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Private registries
+        {t("settings.registries")}
         <HelpTip>
           Credentials for private registries and TLS trust for self-signed ones.
           Only registries listed here get credentials — everything else stays
@@ -703,6 +711,7 @@ function RegistryRow({
 // pile up after updates) and stale build cache. Tagged images, containers,
 // volumes, and networks are never touched.
 function PruneSection() {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -729,7 +738,7 @@ function PruneSection() {
   return (
     <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
       <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
-        Maintenance
+        {t("settings.maintenance")}
         <HelpTip>
           Image updates leave the old, now-untagged image layers behind on
           disk. Prune removes those dangling images and stale build cache. It

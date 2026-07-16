@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
+import { useI18n } from "../i18n";
 
 // One planned compose rewrite awaiting the user's confirmation in the review
 // modal — the diff to show and the base hash to lock the apply to (§5.2).
@@ -30,6 +31,7 @@ const diffColor: Record<string, string> = {
 };
 
 export default function Updates() {
+  const { t } = useI18n();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["updates"],
     queryFn: fetchUpdates,
@@ -269,7 +271,7 @@ export default function Updates() {
             />
             {available.length > 0
               ? `${available.length} update${available.length === 1 ? "" : "s"} available`
-              : "Everything up to date"}
+              : t("updates.allUpToDate")}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -301,7 +303,7 @@ export default function Updates() {
             }`}
           >
             {checking && <SpinnerIcon className="h-3.5 w-3.5" />}
-            {checking ? "Checking…" : "Check now"}
+            {checking ? t("updates.checking") : t("updates.checkNow")}
           </button>
         </div>
       </div>
@@ -323,7 +325,7 @@ export default function Updates() {
         <div>
           <div className="mb-1.5 flex flex-wrap items-center gap-3">
             <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-              Update available
+              {t("updates.sectionAvailable")}
             </h3>
             {applicable.length > 0 && (
               <div className="flex items-center gap-2">
@@ -335,7 +337,7 @@ export default function Updates() {
                     disabled={busy}
                     className="accent-accent-500"
                   />
-                  Select all
+                  {t("updates.selectAll")}
                 </label>
                 <button
                   onClick={() =>
@@ -385,7 +387,7 @@ export default function Updates() {
       {ignored.length > 0 && (
         <div>
           <h3 className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-            Ignored
+            {t("updates.sectionIgnored")}
             <HelpTip>
               An update exists, but you chose to stay on the pinned tag. These
               are left out of “Update all”. Bump the tag in the compose file
@@ -407,7 +409,7 @@ export default function Updates() {
       )}
 
       {current.length > 0 && (
-        <Section title="Up to date">
+        <Section title={t("updates.sectionUpToDate")}>
           {current.map((e) => (
             <UpdateRow
               key={e.image}
@@ -421,7 +423,7 @@ export default function Updates() {
       )}
 
       {other.length > 0 && (
-        <Section title="Not checked / other">
+        <Section title={t("updates.sectionOther")}>
           {other.map((e) => (
             <UpdateRow
               key={e.image}
@@ -479,6 +481,7 @@ function UpdateRow({
   onIgnore?: () => void;
   disabled?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <li className="rounded-lg border border-zinc-800 bg-zinc-900/40">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 pr-3">
@@ -556,7 +559,7 @@ function UpdateRow({
             }
             className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
           >
-            {entry.ignored ? "Un-ignore" : "Ignore"}
+            {entry.ignored ? t("updates.unignore") : t("updates.ignore")}
           </button>
         )}
       </div>

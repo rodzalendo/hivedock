@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { runStackAction, type StackAction } from "../api";
+import { useI18n } from "../i18n";
 import {
   DownloadIcon,
   PlayIcon,
@@ -24,33 +25,33 @@ type Phase = "idle" | "running" | "ok" | "error";
 
 const actions: {
   id: StackAction;
-  label: string;
+  labelKey: string;
   title: string;
   Icon: (p: { className?: string }) => JSX.Element;
 }[] = [
   {
     id: "up",
-    label: "Deploy",
+    labelKey: "stacks.deploy",
     title:
       "docker compose up -d — create/recreate and start containers from the compose file. Run this to apply edits or pulled images.",
     Icon: PlayIcon,
   },
   {
     id: "pull",
-    label: "Pull",
+    labelKey: "stacks.pull",
     title:
       "docker compose pull — download newer images for the tags in the compose file. It does NOT restart anything; press Deploy afterward to apply.",
     Icon: DownloadIcon,
   },
   {
     id: "restart",
-    label: "Restart",
+    labelKey: "stacks.restart",
     title: "docker compose restart — restart the containers without recreating them.",
     Icon: RestartIcon,
   },
   {
     id: "stop",
-    label: "Stop",
+    labelKey: "stacks.stop",
     title:
       "docker compose stop — stop the containers but keep them (start again with Deploy).",
     Icon: StopIcon,
@@ -64,6 +65,7 @@ const actions: {
 // shared WebSocket as hivedock:deploy events). Keyed by stack name by the
 // caller, so switching stacks starts fresh.
 export default function DeployConsole({ stack }: { stack: string }) {
+  const { t } = useI18n();
   const [phase, setPhase] = useState<Phase>("idle");
   const [action, setAction] = useState<StackAction | null>(null);
   const [lines, setLines] = useState<string[]>([]);
@@ -135,7 +137,7 @@ export default function DeployConsole({ stack }: { stack: string }) {
             }`}
           >
             <a.Icon className="h-3.5 w-3.5" />
-            {a.label}
+            {t(a.labelKey)}
           </button>
         ))}
       </div>

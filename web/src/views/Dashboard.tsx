@@ -13,6 +13,7 @@ import {
 } from "../api";
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
+import { useI18n } from "../i18n";
 import { ChevronsDownIcon, EyeIcon, EyeOffIcon, PencilIcon } from "../components/icons";
 
 // The pool every card lives in unless the user (or a compose label) says
@@ -70,6 +71,7 @@ function groupFor(e: HomeEntry, layout: HomeLayout): string {
 type Dragged = { kind: "group" | "card"; key: string } | null;
 
 export default function Dashboard() {
+  const { t } = useI18n();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["home"],
     queryFn: fetchHome,
@@ -452,7 +454,7 @@ export default function Dashboard() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search apps…"
+          placeholder={t("dashboard.search")}
           className="w-56 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:border-accent-500 focus:outline-none"
         />
         {hiddenCount > 0 && (
@@ -463,22 +465,22 @@ export default function Dashboard() {
               onChange={(e) => setShowHidden(e.target.checked)}
               className="accent-accent-500"
             />
-            Show hidden ({hiddenCount})
+            {t("dashboard.showHidden", { n: hiddenCount })}
           </label>
         )}
 
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <span className="flex items-center gap-1.5" title="Running">
             <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-            {counts.active} active
+            {counts.active} {t("dashboard.active")}
           </span>
           <span className="flex items-center gap-1.5" title="Created / paused / not present">
             <span className="inline-block h-2 w-2 rounded-full bg-zinc-600" />
-            {counts.inactive} inactive
+            {counts.inactive} {t("dashboard.inactive")}
           </span>
           <span className="flex items-center gap-1.5" title="Exited (stopped or crashed)">
             <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-            {counts.exited} exited
+            {counts.exited} {t("dashboard.exited")}
           </span>
         </div>
 
@@ -586,7 +588,7 @@ export default function Dashboard() {
             className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition hover:bg-zinc-800"
             title="Create groups, drag apps between them, arrange columns and order"
           >
-            Customize
+            {t("dashboard.customize")}
           </button>
         )}
       </div>

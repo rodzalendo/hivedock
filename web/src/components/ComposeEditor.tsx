@@ -5,6 +5,7 @@ import { yaml } from "@codemirror/lang-yaml";
 import { EditorView } from "@codemirror/view";
 import { useTheme, isLightTheme } from "../theme";
 import { useEditorWrap } from "../useEditorWrap";
+import { useI18n } from "../i18n";
 import { WrapToggle } from "./ui";
 import {
   fetchCompose,
@@ -33,6 +34,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
   });
 
   const theme = useTheme();
+  const { t } = useI18n();
   const [wrap, setWrap] = useEditorWrap();
   const [text, setText] = useState<string>("");
   const [savedText, setSavedText] = useState<string>("");
@@ -147,14 +149,14 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           disabled={busy || !dirty}
           className="rounded-lg bg-accent-600 px-3 py-1.5 text-sm font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
         >
-          Save
+          {t("common.save")}
         </button>
         <button
           onClick={onValidate}
           disabled={busy}
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition hover:bg-zinc-800 disabled:opacity-40"
         >
-          Validate
+          {t("stacks.validate")}
         </button>
         <button
           onClick={() => {
@@ -164,7 +166,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           disabled={busy || !dirty}
           className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:text-zinc-200 disabled:opacity-40"
         >
-          Revert
+          {t("stacks.revert")}
         </button>
         <span className="ml-auto text-[11px] text-zinc-600">
           Save writes the file; it does not redeploy.
