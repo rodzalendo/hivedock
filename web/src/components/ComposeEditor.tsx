@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
+import { useTheme, isLightTheme } from "../theme";
 import {
   fetchCompose,
   validateCompose,
@@ -28,6 +29,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     refetchOnWindowFocus: false,
   });
 
+  const theme = useTheme();
   const [text, setText] = useState<string>("");
   const [savedText, setSavedText] = useState<string>("");
   const [baseSha, setBaseSha] = useState<string>("");
@@ -125,7 +127,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
         <CodeMirror
           value={text}
           height="360px"
-          theme="dark"
+          theme={isLightTheme(theme) ? "light" : "dark"}
           extensions={[yaml()]}
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}

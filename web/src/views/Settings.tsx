@@ -16,6 +16,7 @@ import {
 } from "../api";
 import { SpinnerIcon } from "../components/icons";
 import { HelpTip } from "../components/ui";
+import { THEMES, getStoredTheme, setTheme, type ThemeId } from "../theme";
 
 export default function Settings() {
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -37,6 +38,8 @@ export default function Settings() {
       <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
         Settings
       </h2>
+
+      <AppearanceSection />
 
       <IntervalSection current={data.checkInterval} onSaved={refetch} />
 
@@ -67,6 +70,70 @@ export default function Settings() {
         </dl>
       </section>
     </div>
+  );
+}
+
+// AppearanceSection switches the app theme. The choice is stored in
+// localStorage and applied instantly by flipping the `data-theme` attribute on
+// <html> (see theme.ts) — no server round-trip, it's a per-browser preference.
+function AppearanceSection() {
+  const [current, setCurrent] = useState<ThemeId>(() => getStoredTheme());
+
+  function pick(id: ThemeId) {
+    setTheme(id);
+    setCurrent(id);
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        Appearance
+        <HelpTip>
+          The theme is remembered in this browser only — it isn&apos;t shared
+          with other users or devices.
+        </HelpTip>
+      </h3>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        {THEMES.map((t) => {
+          const active = t.id === current;
+          return (
+            <button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              aria-pressed={active}
+              className={`group flex flex-col gap-2 rounded-lg border p-3 text-left transition ${
+                active
+                  ? "border-accent-500 bg-accent-500/10"
+                  : "border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/40"
+              }`}
+              title={t.blurb}
+            >
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="h-5 w-5 shrink-0 rounded border border-black/20"
+                  style={{ background: t.swatch[0] }}
+                />
+                <span
+                  className="h-5 w-5 shrink-0 rounded border border-black/20"
+                  style={{ background: t.swatch[1] }}
+                />
+                {active && (
+                  <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-accent-500">
+                    Active
+                  </span>
+                )}
+              </span>
+              <span className="text-[13px] font-medium text-zinc-200">
+                {t.name}
+              </span>
+              <span className="text-[11px] leading-relaxed text-zinc-500">
+                {t.blurb}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

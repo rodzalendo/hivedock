@@ -11,7 +11,14 @@ import "@fontsource/ibm-plex-sans/700.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@fontsource/ibm-plex-mono/600.css";
+// Pixel fonts for the Fallout / Cyberpunk themes (bundled by Vite, offline).
+import "@fontsource/vt323/400.css";
+import "@fontsource/press-start-2p/400.css";
 import "./index.css";
+import { initTheme } from "./theme";
+
+// Apply the saved theme before the first paint to avoid a flash of the default.
+initTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

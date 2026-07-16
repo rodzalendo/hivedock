@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CodeMirror from "@uiw/react-codemirror";
 import { fetchEnv, saveEnv, type SaveConflict } from "../api";
+import { useTheme, isLightTheme } from "../theme";
 
 type Feedback =
   | { kind: "none" }
@@ -18,6 +19,7 @@ export default function EnvEditor({ stack }: { stack: string }) {
     refetchOnWindowFocus: false,
   });
 
+  const theme = useTheme();
   const [text, setText] = useState("");
   const [savedText, setSavedText] = useState("");
   const [baseSha, setBaseSha] = useState("");
@@ -101,7 +103,7 @@ export default function EnvEditor({ stack }: { stack: string }) {
         <CodeMirror
           value={text}
           height="360px"
-          theme="dark"
+          theme={isLightTheme(theme) ? "light" : "dark"}
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
           placeholder={"# KEY=value\nPUID=1000\nTZ=Europe/Warsaw"}
