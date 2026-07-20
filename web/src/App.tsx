@@ -75,7 +75,11 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 md:flex-row">
-      <aside className="flex shrink-0 flex-col border-zinc-800 md:w-52 md:border-r">
+      {/* Sticky full-viewport column: without md:h-screen the aside stretches to
+          the page height, so mt-auto pins the footer (version pill, backend
+          status, sign-out) to the bottom of a long page — off-screen on tall
+          views like Updates until you scroll all the way down. */}
+      <aside className="flex shrink-0 flex-col border-zinc-800 md:sticky md:top-0 md:h-screen md:w-52 md:border-r">
         <div className="flex items-center justify-between border-b border-zinc-800 py-3 pl-6 pr-3 md:border-b-0 md:py-4">
           <button
             onClick={() => navigate("home")}
