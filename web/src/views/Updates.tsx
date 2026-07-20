@@ -24,6 +24,20 @@ type PlannedEdit = {
   sha256: string;
 };
 
+// A digest update planned into the same review: no file rewrite, just a
+// pull-always redeploy of every stack that uses the image.
+type DigestPlan = {
+  image: string;
+  stacks: string[];
+};
+
+// The pending review bundles both kinds so one confirmation covers the whole
+// "Update all" batch — semver rewrites (with diffs) and digest redeploys.
+type PlannedReview = {
+  edits: PlannedEdit[];
+  digests: DigestPlan[];
+};
+
 const diffColor: Record<string, string> = {
   major: "bg-red-500/15 text-red-400",
   minor: "bg-amber-500/15 text-amber-400",
@@ -41,8 +55,9 @@ export default function Updates() {
   const [note, setNote] = useState<string | null>(null);
   const [applyingImages, setApplyingImages] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  // The pending review: compose diffs to confirm before anything is written.
-  const [review, setReview] = useState<PlannedEdit[] | null>(null);
+  // The pending review: semver diffs + digest redeploys to confirm before
+  // anything is written or redeployed.
+  const [review, setReview] = useState<PlannedReview | null>(null);
 
   // A completed check (updates:changed) clears the checking state and any
   // in-flight "applying" rows — the re-check after an update is what confirms
@@ -89,11 +104,20 @@ export default function Updates() {
     await qc.invalidateQueries({ queryKey: ["updates"] });
   }
 
-  // Only semver updates can be one-click applied (digest updates aren't a tag
-  // rewrite). Those are the selectable/bulk-updatable rows.
-  const applicable = useMemo(
+  // Semver updates apply as a compose tag rewrite (with a reviewable diff);
+  // digest updates apply as a pull-always redeploy (same tag, moved digest).
+  // Both are actionable and selectable — "Update all" covers the two together.
+  const applicableSemver = useMemo(
     () => available.filter((e) => e.kind === "semver" && e.candidate),
     [available],
+  );
+  const applicableDigest = useMemo(
+    () => available.filter((e) => e.kind === "digest"),
+    [available],
+  );
+  const actionable = useMemo(
+    () => [...applicableSemver, ...applicableDigest],
+    [applicableSemver, applicableDigest],
   );
   const busy = applyingImages.size > 0;
 
@@ -134,9 +158,9 @@ export default function Updates() {
   }
 
   const allSelected =
-    applicable.length > 0 && applicable.every((e) => selected.has(e.image));
+    actionable.length > 0 && actionable.every((e) => selected.has(e.image));
   function toggleSelectAll() {
-    setSelected(allSelected ? new Set() : new Set(applicable.map((e) => e.image)));
+    setSelected(allSelected ? new Set() : new Set(actionable.map((e) => e.image)));
   }
 
   // Digest updates (a latest-style tag whose digest moved) can't be applied by
@@ -179,16 +203,18 @@ export default function Updates() {
     }
   }
 
-  // Step 1: gather the exact compose diffs for every selected update WITHOUT
-  // writing anything, and open the review modal (§5.2). Nothing touches disk
-  // until the user confirms.
+  // Step 1: gather the exact compose diffs for every selected semver update
+  // WITHOUT writing anything, plus the redeploy plan for every digest update,
+  // and open the review modal (§5.2). Nothing touches disk until the user
+  // confirms.
   async function reviewMany(list: UpdateEntry[]) {
-    const targets = list.filter((e) => e.kind === "semver" && e.candidate);
-    if (targets.length === 0 || busy) return;
+    const semverTargets = list.filter((e) => e.kind === "semver" && e.candidate);
+    const digestTargets = list.filter((e) => e.kind === "digest");
+    if ((semverTargets.length === 0 && digestTargets.length === 0) || busy) return;
     setNote(null);
     try {
       const edits: PlannedEdit[] = [];
-      for (const e of targets) {
+      for (const e of semverTargets) {
         for (const u of e.usedBy) {
           const p = await previewUpdate(u.stack, u.service, e.candidate!);
           if (p.changed && p.diff) {
@@ -203,35 +229,59 @@ export default function Updates() {
           }
         }
       }
-      if (edits.length === 0) {
+      const digests: DigestPlan[] = digestTargets.map((e) => ({
+        image: e.image,
+        stacks: [...new Set(e.usedBy.map((u) => u.stack))],
+      }));
+      if (edits.length === 0 && digests.length === 0) {
         setNote("Selected images are already at the target tag.");
         return;
       }
-      setReview(edits);
+      setReview({ edits, digests });
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Couldn't prepare the update.");
     }
   }
 
-  // Step 2: the user confirmed the diffs. Apply each rewrite (locked to the hash
-  // captured at preview), then redeploy each affected stack once and re-check.
+  // Step 2: the user confirmed. Apply each semver rewrite (locked to the hash
+  // captured at preview), then redeploy every affected stack once and re-check.
+  // A stack that hosts a digest update needs a pull-always redeploy ("update");
+  // a stack with only tag rewrites just needs "up" (the new tag forces the pull).
   async function confirmReview() {
     if (!review || busy) return;
-    const edits = review;
+    const { edits, digests } = review;
     setReview(null);
-    setApplyingImages(new Set(edits.map((e) => e.image)));
+    setApplyingImages(
+      new Set([...edits.map((e) => e.image), ...digests.map((d) => d.image)]),
+    );
     setNote(null);
     try {
-      const stacks = new Set<string>();
+      const upStacks = new Set<string>();
       for (const e of edits) {
         await applyUpdate(e.stack, e.service, e.tag, e.sha256);
-        stacks.add(e.stack);
+        upStacks.add(e.stack);
       }
-      for (const s of stacks) {
-        await runStackAction(s, "up");
+      // Digest stacks pull-always and get re-checked once their deploy ends
+      // (via the deploy:end listener above).
+      const pullStacks = new Set<string>();
+      for (const d of digests) {
+        for (const s of d.stacks) {
+          pullStacks.add(s);
+          pendingStacks.current.add(s);
+        }
       }
+      // Pull-always wins when a stack is in both sets — one redeploy covers it.
+      for (const s of pullStacks) upStacks.delete(s);
+      for (const s of pullStacks) await runStackAction(s, "update");
+      for (const s of upStacks) await runStackAction(s, "up");
+
+      const stackCount = upStacks.size + pullStacks.size;
+      const imageCount = new Set([
+        ...edits.map((e) => e.image),
+        ...digests.map((d) => d.image),
+      ]).size;
       setNote(
-        `Updating ${edits.length} image${edits.length === 1 ? "" : "s"} across ${stacks.size} stack${stacks.size === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
+        `Updating ${imageCount} image${imageCount === 1 ? "" : "s"} across ${stackCount} stack${stackCount === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
       );
       setSelected(new Set());
       await checkUpdates();
@@ -248,7 +298,8 @@ export default function Updates() {
     <div className="space-y-5">
       {review && (
         <ReviewModal
-          edits={review}
+          edits={review.edits}
+          digests={review.digests}
           onCancel={() => setReview(null)}
           onConfirm={() => void confirmReview()}
         />
@@ -329,7 +380,7 @@ export default function Updates() {
             <h3 className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
               {t("updates.sectionAvailable")}
             </h3>
-            {applicable.length > 0 && (
+            {actionable.length > 0 && (
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-1.5 text-xs text-zinc-400">
                   <input
@@ -343,7 +394,7 @@ export default function Updates() {
                 </label>
                 <button
                   onClick={() =>
-                    reviewMany(applicable.filter((e) => selected.has(e.image)))
+                    reviewMany(actionable.filter((e) => selected.has(e.image)))
                   }
                   disabled={busy || selected.size === 0}
                   className="rounded-lg border border-zinc-700 px-2.5 py-1 text-xs text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-40"
@@ -351,13 +402,13 @@ export default function Updates() {
                   {t("updates.updateSelected", { n: selected.size })}
                 </button>
                 <button
-                  onClick={() => reviewMany(applicable)}
+                  onClick={() => reviewMany(actionable)}
                   disabled={busy}
                   className="rounded-lg bg-hive-500 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-hive-400 disabled:opacity-50"
                 >
                   {busy
                     ? t("updates.updating")
-                    : t("updates.updateAll", { n: applicable.length })}
+                    : t("updates.updateAll", { n: actionable.length })}
                 </button>
               </div>
             )}
@@ -377,7 +428,9 @@ export default function Updates() {
                       : undefined
                 }
                 applying={applyingImages.has(e.image)}
-                selectable={e.kind === "semver" && !!e.candidate}
+                selectable={
+                  (e.kind === "semver" && !!e.candidate) || e.kind === "digest"
+                }
                 checked={selected.has(e.image)}
                 onCheck={() => toggleSelect(e.image)}
                 onIgnore={() => toggleIgnore(e)}
@@ -654,18 +707,25 @@ function StatusChip({ entry }: { entry: UpdateEntry }) {
   );
 }
 
-// ReviewModal shows the exact compose diffs a batch update will write, before
+// ReviewModal shows the exact compose diffs a batch update will write, plus the
+// digest images that will be pulled & redeployed without a file edit, before
 // anything touches disk (§5.2). Diffs render as text nodes (no innerHTML).
 function ReviewModal({
   edits,
+  digests,
   onCancel,
   onConfirm,
 }: {
   edits: PlannedEdit[];
+  digests: DigestPlan[];
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const stacks = new Set(edits.map((e) => e.stack)).size;
+  const stacks = new Set([
+    ...edits.map((e) => e.stack),
+    ...digests.flatMap((d) => d.stacks),
+  ]).size;
+  const total = edits.length + digests.length;
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
@@ -677,13 +737,21 @@ function ReviewModal({
       >
         <div className="border-b border-zinc-800 px-5 py-3">
           <h3 className="text-sm font-semibold text-zinc-100">
-            Review {edits.length} change{edits.length === 1 ? "" : "s"}
+            Review {total} change{total === 1 ? "" : "s"}
           </h3>
           <p className="mt-0.5 text-xs text-zinc-500">
-            HiveDock will rewrite the image tag in{" "}
-            {edits.length === 1 ? "this compose file" : "these compose files"}{" "}
-            (comments and formatting preserved), then redeploy {stacks} stack
-            {stacks === 1 ? "" : "s"}. Nothing is written until you apply.
+            {edits.length > 0 && (
+              <>
+                HiveDock will rewrite the image tag in{" "}
+                {edits.length === 1 ? "this compose file" : "these compose files"}{" "}
+                (comments and formatting preserved)
+                {digests.length > 0 ? ", pull the moved digests," : ""} then
+              </>
+            )}
+            {edits.length === 0 &&
+              `HiveDock will pull the moved image${digests.length === 1 ? "" : "s"} and`}{" "}
+            redeploy {stacks} stack{stacks === 1 ? "" : "s"}. Nothing is written
+            until you apply.
           </p>
         </div>
         <div className="space-y-3 overflow-auto px-5 py-4">
@@ -701,6 +769,26 @@ function ReviewModal({
               </pre>
             </div>
           ))}
+          {digests.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+                Pull &amp; redeploy — digest changed, no file edit
+              </p>
+              {digests.map((d) => (
+                <div
+                  key={d.image}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2"
+                >
+                  <p className="truncate font-mono text-[11px] text-zinc-300">
+                    {d.image}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-zinc-500">
+                    {d.stacks.join(", ")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-5 py-3">
           <button
