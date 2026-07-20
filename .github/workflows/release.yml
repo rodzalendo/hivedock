@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release # gate releases with a required reviewer (configure in repo settings)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Docker metadata
         id: meta
