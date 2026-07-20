@@ -1,10 +1,11 @@
 # Copy to /opt/hivedock/compose.yaml on PCT 102 for the first deploy, then:
 #   docker compose pull && docker compose up -d
 # See docs/DEPLOYMENT.md. STACKS_DIR points at /opt/stacks-test.
-# :edge is published on every push to main; tag vX.Y.Z for :latest/:X.Y.Z.
+# Releases are cut from vX.Y.Z tags only (:X.Y.Z, :X.Y, :latest) — there is no
+# rolling tag. To test an unreleased build here, deploy a specific :X.Y.Z.
 services:
   hivedock:
-    image: ghcr.io/rodzalendo/hivedock:edge
+    image: ghcr.io/rodzalendo/hivedock:latest
     container_name: hivedock
     restart: unless-stopped
     ports:

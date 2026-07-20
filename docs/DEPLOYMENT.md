@@ -41,7 +41,7 @@ Rule: Hivedock runs against `/opt/stacks-test` until it has proven, on this box,
 Development and deployment are decoupled through GitHub + GHCR — no `docker save`/`ssh load` round-trip.
 
 - **Staging = this machine (Docker Desktop).** Iterate with `task up` (or `docker compose up --build`), which builds `hivedock:dev` and serves `:5001` against `./dev-stacks`. This is the throwaway "working version" — try changes here before committing.
-- **Deploy = server pulls a published image.** Push to `main` → GitHub Actions builds a multi-arch image and publishes `ghcr.io/rodzalendo/hivedock:edge`. Tagging `vX.Y.Z` additionally publishes `:X.Y.Z`, `:X.Y`, and `:latest`. The server never builds — it only pulls.
+- **Deploy = server pulls a published image.** Releases are cut from tags: pushing `vX.Y.Z` → GitHub Actions builds a multi-arch image and publishes `:X.Y.Z`, `:X.Y`, and `:latest`. A push to `main` publishes nothing (there is no rolling tag — `:edge` was removed), so `:latest` only ever moves on a deliberate release. The server never builds — it only pulls.
 
 ### One-time: make the GHCR package pullable
 
@@ -60,7 +60,7 @@ docker compose pull
 docker compose up -d
 ```
 
-`deploy/pct102.compose.yaml` already references `ghcr.io/rodzalendo/hivedock:edge`, mounts the socket, `./data`, and `/opt/stacks-test`. Auth is on — complete first-run setup at the login screen (the one-time token is printed to the container log).
+`deploy/pct102.compose.yaml` already references `ghcr.io/rodzalendo/hivedock:latest`, mounts the socket, `./data`, and `/opt/stacks-test`. Auth is on — complete first-run setup at the login screen (the one-time token is printed to the container log).
 
 ### Subsequent updates
 
@@ -68,7 +68,7 @@ docker compose up -d
 ssh root@<pct-ip> "cd /opt/hivedock && docker compose pull && docker compose up -d"
 ```
 
-Or set `HIVEDOCK_DEPLOY_HOST` in `.env.local` and run `task deploy` (which does exactly the above over SSH). For pinned releases, deploy a tag instead of `:edge` by editing the `image:` line to `:X.Y.Z`.
+Or set `HIVEDOCK_DEPLOY_HOST` in `.env.local` and run `task deploy` (which does exactly the above over SSH). To pin this box to a specific release instead of tracking `:latest`, edit the `image:` line to `:X.Y.Z`.
 
 ## Test stacks to seed on PCT 102
 
