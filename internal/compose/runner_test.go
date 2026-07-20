@@ -32,6 +32,52 @@ func TestSubcommandArgs(t *testing.T) {
 	}
 }
 
+func TestCommandArgsVolumes(t *testing.T) {
+	base := Op{Stack: "media", ComposeFile: "/s/media/compose.yaml", ProjectDir: "/s/media"}
+
+	down := base
+	down.Action = ActionDown
+	if got := commandArgs(down); contains(got, "-v") {
+		t.Errorf("plain down must not remove volumes: %v", got)
+	}
+
+	downV := down
+	downV.Volumes = true
+	if got := commandArgs(downV); !contains(got, "-v") {
+		t.Errorf("down with Volumes should pass -v: %v", got)
+	}
+
+	// Volumes is meaningless for every other action and must never leak into one.
+	for _, a := range []Action{ActionUp, ActionRestart, ActionPull, ActionStop, ActionRecreate, ActionUpdate} {
+		op := base
+		op.Action = a
+		op.Volumes = true
+		if got := commandArgs(op); contains(got, "-v") {
+			t.Errorf("%q with Volumes=true leaked -v: %v", a, got)
+		}
+	}
+}
+
+// TestDownVolumesNotAddressableAsAction guards the destructive path: actions are
+// routed by URL segment, so a `down -v` action name would let any caller destroy
+// volumes without the delete dialog's explicit opt-in.
+func TestDownVolumesNotAddressableAsAction(t *testing.T) {
+	for _, name := range []string{"down -v", "down-v", "down-volumes"} {
+		if Action(name).Valid() {
+			t.Errorf("%q must not be a valid action", name)
+		}
+	}
+}
+
+func contains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPerStackLock(t *testing.T) {
 	r := NewRunner()
 

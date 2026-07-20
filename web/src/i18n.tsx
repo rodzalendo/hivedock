@@ -165,6 +165,9 @@ const en: Dict = {
   "stacks.stop": "Stop",
   "stacks.rename": "Rename",
   "stacks.delete": "Delete",
+  "stacks.deleteVolumes": "Also delete named volumes",
+  "stacks.deleteVolumesHelp":
+    "Permanently destroys this stack's application data — databases, media libraries, configs. This can't be undone.",
   "stacks.validate": "Validate",
   "stacks.revert": "Revert",
   "stacks.logs": "Logs",
@@ -352,6 +355,9 @@ const pl: Dict = {
   "stacks.stop": "Zatrzymaj",
   "stacks.rename": "Zmień nazwę",
   "stacks.delete": "Usuń",
+  "stacks.deleteVolumes": "Usuń także nazwane wolumeny",
+  "stacks.deleteVolumesHelp":
+    "Trwale niszczy dane aplikacji tego stosu — bazy danych, biblioteki multimediów, konfiguracje. Tej operacji nie można cofnąć.",
   "stacks.validate": "Sprawdź",
   "stacks.revert": "Przywróć",
   "stacks.logs": "Logi",
@@ -540,6 +546,9 @@ const de: Dict = {
   "stacks.stop": "Stoppen",
   "stacks.rename": "Umbenennen",
   "stacks.delete": "Löschen",
+  "stacks.deleteVolumes": "Auch benannte Volumes löschen",
+  "stacks.deleteVolumesHelp":
+    "Zerstört die Anwendungsdaten dieses Stacks endgültig — Datenbanken, Medienbibliotheken, Konfigurationen. Dies kann nicht rückgängig gemacht werden.",
   "stacks.validate": "Prüfen",
   "stacks.revert": "Zurücksetzen",
   "stacks.logs": "Logs",
@@ -728,6 +737,9 @@ const es: Dict = {
   "stacks.stop": "Detener",
   "stacks.rename": "Renombrar",
   "stacks.delete": "Eliminar",
+  "stacks.deleteVolumes": "Eliminar también los volúmenes con nombre",
+  "stacks.deleteVolumesHelp":
+    "Destruye permanentemente los datos de esta pila — bases de datos, bibliotecas multimedia, configuraciones. Esta acción no se puede deshacer.",
   "stacks.validate": "Validar",
   "stacks.revert": "Revertir",
   "stacks.logs": "Registros",
@@ -916,6 +928,9 @@ const fr: Dict = {
   "stacks.stop": "Arrêter",
   "stacks.rename": "Renommer",
   "stacks.delete": "Supprimer",
+  "stacks.deleteVolumes": "Supprimer aussi les volumes nommés",
+  "stacks.deleteVolumesHelp":
+    "Détruit définitivement les données applicatives de cette pile — bases de données, médiathèques, configurations. Cette action est irréversible.",
   "stacks.validate": "Valider",
   "stacks.revert": "Rétablir",
   "stacks.logs": "Journaux",

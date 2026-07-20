@@ -314,10 +314,12 @@ export async function createStack(name: string): Promise<CreatedStack> {
   return (await res.json()) as CreatedStack;
 }
 
-// deleteStack stops any running containers, then removes the stack's directory
-// under STACKS_DIR. Destructive and irreversible.
-export async function deleteStack(name: string): Promise<void> {
-  await mutate(`/api/stacks/${encodeURIComponent(name)}`, "DELETE");
+// deleteStack tears down the stack's containers (running or stopped), then
+// removes its directory under STACKS_DIR. With volumes=true it also deletes the
+// stack's named volumes, destroying application data. Irreversible either way.
+export async function deleteStack(name: string, volumes = false): Promise<void> {
+  const query = volumes ? "?volumes=true" : "";
+  await mutate(`/api/stacks/${encodeURIComponent(name)}${query}`, "DELETE");
 }
 
 // renameStack renames a managed stack's directory. The stack must be stopped

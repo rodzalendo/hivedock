@@ -503,16 +503,19 @@ function StackActions({
   onDeleted: () => void | Promise<void>;
   onRenamed: (newName: string) => void | Promise<void>;
 }) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<ActionMode>("idle");
   const [newName, setNewName] = useState(stack.name);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteVolumes, setDeleteVolumes] = useState(false);
   const running = stack.status === "running" || stack.status === "partial";
 
   function reset() {
     setMode("idle");
     setError(null);
     setNewName(stack.name);
+    setDeleteVolumes(false); // never carry a destructive opt-in across dialogs
   }
 
   async function doRename(e: React.FormEvent) {
@@ -534,7 +537,7 @@ function StackActions({
     setBusy(true);
     setError(null);
     try {
-      await deleteStack(stack.name);
+      await deleteStack(stack.name, deleteVolumes);
       await onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed.");
@@ -596,11 +599,23 @@ function StackActions({
             Cancel
           </button>
         </div>
+        <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+          <input
+            type="checkbox"
+            checked={deleteVolumes}
+            onChange={(e) => setDeleteVolumes(e.target.checked)}
+            disabled={busy}
+            className="h-3 w-3 accent-red-500"
+          />
+          {t("stacks.deleteVolumes")}
+        </label>
         <span className="max-w-72 text-right text-[11px] text-zinc-600">
           {error ? (
             <span className="text-red-400">{error}</span>
+          ) : deleteVolumes ? (
+            <span className="text-red-400">{t("stacks.deleteVolumesHelp")}</span>
           ) : (
-            "Removes the stack directory and its compose file. This can't be undone."
+            "Removes the stack directory, its compose file, and its containers. This can't be undone."
           )}
         </span>
       </div>

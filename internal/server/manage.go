@@ -14,13 +14,15 @@ import (
 	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
-// deleteStack removes a managed stack: it stops any running containers first
-// (so nothing is orphaned), then deletes the stack's directory under
-// STACKS_DIR. External stacks are read-only and can't be deleted. Auth + CSRF
-// protected. This is destructive — the compose file and everything in the
-// stack's directory is removed.
+// deleteStack removes a managed stack: it tears down its containers first (so
+// nothing is orphaned), then deletes the stack's directory under STACKS_DIR.
+// With ?volumes=true it also deletes the stack's named volumes. External stacks
+// are read-only and can't be deleted. Auth + CSRF protected. This is
+// destructive — the compose file and everything in the stack's directory is
+// removed.
 func (a *api) deleteStack(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
+	withVolumes := r.URL.Query().Get("volumes") == "true"
 
 	st, ok, err := a.stacks.Get(r.Context(), name)
 	if err != nil {
@@ -51,13 +53,23 @@ func (a *api) deleteStack(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	// Stop and remove containers first so deleting the compose file doesn't
-	// orphan a running stack. Only bother if something is actually running.
-	if hasRunning(st) && st.ComposeFile != "" {
-		op := compose.Op{Stack: name, Action: compose.ActionDown, ComposeFile: st.ComposeFile, ProjectDir: st.Dir}
+	// Tear the stack down before deleting the compose file. This must run for
+	// *stopped* containers too, not just running ones: a stopped container keeps
+	// its com.docker.compose.project label, so removing the directory without a
+	// `down` leaves containers the scanner then reclassifies as an external
+	// stack (no compose file on disk = external) — undeletable, since external
+	// stacks are read-only. `down` is a cheap no-op when nothing exists.
+	if hasContainers(st) && st.ComposeFile != "" {
+		op := compose.Op{
+			Stack:       name,
+			Action:      compose.ActionDown,
+			ComposeFile: st.ComposeFile,
+			ProjectDir:  st.Dir,
+			Volumes:     withVolumes,
+		}
 		if err := a.runner.Exec(r.Context(), op, func(string) {}); err != nil {
 			a.logger.Warn("delete stack: down failed", "name", name, "err", err)
-			writeError(w, http.StatusInternalServerError, "failed to stop the stack before deleting (stop it first, then retry): "+err.Error())
+			writeError(w, http.StatusInternalServerError, "failed to tear down the stack before deleting (stop it first, then retry): "+err.Error())
 			return
 		}
 	}
@@ -175,6 +187,19 @@ func (a *api) childOfStacksDir(dir string) (string, error) {
 		return "", fmt.Errorf("refusing to operate on %q: not a stack under the stacks directory", dir)
 	}
 	return abs, nil
+}
+
+// hasContainers reports whether the daemon still knows about any container for
+// this stack, running or not. "absent" is the state the model uses for a
+// compose-defined service with no container at all; anything else (running,
+// exited, created, paused) is a real container that a teardown must remove.
+func hasContainers(st stacks.Stack) bool {
+	for _, svc := range st.Services {
+		if svc.State != "absent" {
+			return true
+		}
+	}
+	return false
 }
 
 // hasRunning reports whether any of a stack's services has a running container.

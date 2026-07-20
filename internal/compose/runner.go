@@ -37,6 +37,14 @@ type Op struct {
 	ComposeFile string // absolute path to the compose file
 	ProjectDir  string // --project-directory (same path in/out of container)
 	Service     string // optional: scope the action to a single service
+
+	// Volumes adds `-v` to ActionDown, deleting the stack's named volumes along
+	// with its containers. This destroys application data (databases, media
+	// libraries, configs) irreversibly, so it is a field rather than its own
+	// Action: actions are addressable by URL segment via the actions endpoint,
+	// and this must only ever be reachable through an explicit opt-in on the
+	// delete path. Ignored by every other action.
+	Volumes bool
 }
 
 // Runner executes mutating `docker compose` subcommands and enforces a
@@ -89,15 +97,7 @@ func (r *Runner) Exec(ctx context.Context, op Op, onLine func(string)) error {
 		return fmt.Errorf("unknown compose action %q", op.Action)
 	}
 
-	// --ansi never keeps the output pane free of terminal escape codes; there is
-	// no TTY on the pipe, so compose already emits plain progress lines.
-	args := []string{"compose", "--ansi", "never", "-f", op.ComposeFile, "--project-directory", op.ProjectDir}
-	args = append(args, subcommandArgs(op.Action)...)
-	if op.Service != "" {
-		args = append(args, op.Service)
-	}
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", commandArgs(op)...)
 	w := &lineEmitter{emit: onLine}
 	cmd.Stdout = w
 	cmd.Stderr = w // combined, mutex-guarded so interleaved writes stay line-safe
@@ -108,6 +108,22 @@ func (r *Runner) Exec(ctx context.Context, op Op, onLine func(string)) error {
 	}
 	w.flush()
 	return nil
+}
+
+// commandArgs builds the full `docker …` argument vector for op.
+//
+// --ansi never keeps the output pane free of terminal escape codes; there is no
+// TTY on the pipe, so compose already emits plain progress lines.
+func commandArgs(op Op) []string {
+	args := []string{"compose", "--ansi", "never", "-f", op.ComposeFile, "--project-directory", op.ProjectDir}
+	args = append(args, subcommandArgs(op.Action)...)
+	if op.Action == ActionDown && op.Volumes {
+		args = append(args, "-v")
+	}
+	if op.Service != "" {
+		args = append(args, op.Service)
+	}
+	return args
 }
 
 // subcommandArgs maps an action to its compose subcommand and flags.
