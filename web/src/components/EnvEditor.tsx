@@ -4,6 +4,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { fetchEnv, saveEnv, type SaveConflict } from "../api";
 import { useTheme, isLightTheme } from "../theme";
+import { appEditorTheme } from "../editorTheme";
 import { useEditorWrap } from "../useEditorWrap";
 import { WrapToggle } from "./ui";
 
@@ -111,7 +112,9 @@ export default function EnvEditor({ stack }: { stack: string }) {
           value={text}
           height="360px"
           theme={isLightTheme(theme) ? "light" : "dark"}
-          extensions={wrap ? [EditorView.lineWrapping] : undefined}
+          extensions={
+            wrap ? [EditorView.lineWrapping, appEditorTheme] : [appEditorTheme]
+          }
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
           placeholder={"# KEY=value\nPUID=1000\nTZ=Europe/Warsaw"}

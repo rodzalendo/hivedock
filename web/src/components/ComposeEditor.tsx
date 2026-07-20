@@ -4,6 +4,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
 import { EditorView } from "@codemirror/view";
 import { useTheme, isLightTheme } from "../theme";
+import { appEditorTheme } from "../editorTheme";
 import { useEditorWrap } from "../useEditorWrap";
 import { useI18n } from "../i18n";
 import { WrapToggle } from "./ui";
@@ -137,7 +138,11 @@ export default function ComposeEditor({ stack }: { stack: string }) {
           value={text}
           height="360px"
           theme={isLightTheme(theme) ? "light" : "dark"}
-          extensions={wrap ? [yaml(), EditorView.lineWrapping] : [yaml()]}
+          extensions={
+            wrap
+              ? [yaml(), EditorView.lineWrapping, appEditorTheme]
+              : [yaml(), appEditorTheme]
+          }
           onChange={(v) => setText(v)}
           basicSetup={{ lineNumbers: true, highlightActiveLine: true }}
         />
