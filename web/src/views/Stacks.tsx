@@ -24,7 +24,8 @@ import { PencilIcon, RestartIcon, SpinnerIcon, TrashIcon } from "../components/i
 import HostStrip from "../components/HostStrip";
 import { useHashRoute, navigate } from "../useHashRoute";
 import LogsPanel from "../components/LogsPanel";
-import DeployConsole from "../components/DeployConsole";
+import { DeployActions, DeployOutput } from "../components/DeployConsole";
+import { useDeployState } from "../deployStore";
 import ComposeEditor from "../components/ComposeEditor";
 import EnvEditor from "../components/EnvEditor";
 
@@ -409,7 +410,9 @@ function StackDetail({
 
         {managed && (
           <div className="border-t border-zinc-800">
-            <DeployConsole key={key} stack={stack.name} />
+            {/* Buttons only — their output renders in the Logs card below, so
+                it survives navigating away mid-operation (deployStore). */}
+            <DeployActions stack={stack.name} />
           </div>
         )}
 
@@ -446,16 +449,82 @@ function StackDetail({
       <div className={`grid gap-4 ${managed ? "xl:grid-cols-2" : ""}`}>
         {managed && <ConfigCard key={`cfg-${key}`} stack={stack.name} />}
 
-        <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
-          <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
-            Logs
-          </div>
-          <LogsPanel
-            key={key}
-            stack={stack.name}
-            services={services.map((s) => s.name)}
-          />
+        <OutputCard
+          key={`out-${key}`}
+          stack={stack.name}
+          services={services.map((s) => s.name)}
+          managed={managed}
+        />
+      </div>
+    </div>
+  );
+}
+
+// OutputCard holds the two output streams for a stack behind one set of tabs:
+// container Logs, and the Operation pane for compose actions. They stay
+// separate because they aren't the same kind of stream — logs carry a service
+// and stdout/stderr and support follow/filter, compose output is a flat
+// transcript — but they belong in the same place, since both answer "what is
+// this stack doing right now".
+function OutputCard({
+  stack,
+  services,
+  managed,
+}: {
+  stack: string;
+  services: string[];
+  managed: boolean;
+}) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<"logs" | "operation">("logs");
+  const { phase } = useDeployState(stack);
+
+  // Jump to the Operation tab when one starts: the user pressed a button and
+  // expects to watch it. Only on the transition into "running", so it never
+  // fights a deliberate switch back to Logs while the operation finishes.
+  useEffect(() => {
+    if (phase === "running") setTab("operation");
+  }, [phase]);
+
+  if (!managed) {
+    return (
+      <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
+          {t("stacks.logs")}
         </div>
+        <LogsPanel stack={stack} services={services} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
+      <div className="flex items-center gap-1 border-b border-zinc-800 px-4 py-2">
+        {(["logs", "operation"] as const).map((id) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition ${
+              tab === id
+                ? "bg-zinc-800 text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            {id === "logs" ? t("stacks.logs") : t("stacks.operation")}
+            {/* A running op stays visible from the Logs tab too. */}
+            {id === "operation" && phase === "running" && (
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+            )}
+          </button>
+        ))}
+      </div>
+      {/* LogsPanel stays mounted while hidden so its stream and scrollback
+          survive a trip to the Operation tab. */}
+      <div className={tab === "logs" ? undefined : "hidden"}>
+        <LogsPanel stack={stack} services={services} />
+      </div>
+      <div className={tab === "operation" ? undefined : "hidden"}>
+        <DeployOutput stack={stack} />
       </div>
     </div>
   );
