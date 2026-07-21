@@ -91,7 +91,14 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Get("/status", api.authStatus)
 			r.Post("/setup", api.authSetup)
 			r.Post("/login", api.authLogin)
-			r.With(api.requireAuth).Post("/logout", api.authLogout)
+			// Logout is deliberately NOT behind requireAuth: it must stay
+			// reachable even when the CSRF cookie is missing, so a stale-cookie
+			// state can always be cleared from inside the app instead of becoming
+			// a hard lockout (it and every other mutation would 403). The handler
+			// only ever clears the caller's own cookies and deletes the session
+			// named by the caller's own cookie; forcing a logout is low-harm
+			// (worst case: a return to the login screen).
+			r.Post("/logout", api.authLogout)
 		})
 
 		// Everything else requires a session or a trusted-proxy header. When a

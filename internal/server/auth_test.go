@@ -254,6 +254,46 @@ func TestCSRFCookieSelfHeal(t *testing.T) {
 	}
 }
 
+// TestLogoutWorksWithoutCSRF guards the recovery valve: logout must succeed
+// even from the locked-out state (valid session, missing CSRF cookie) so a
+// stale cookie is never a hard lockout. It clears both cookies regardless.
+func TestLogoutWorksWithoutCSRF(t *testing.T) {
+	s := authTestServer(t)
+	h := s.mux
+	rec := postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass", "token": s.setupToken})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup failed: %d", rec.Code)
+	}
+	sess := findCookie(cookiesFrom(rec), sessionCookie)
+
+	// Session cookie only, no CSRF cookie and no CSRF header — the exact state
+	// that 403s every other mutation.
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(sess)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("logout without csrf = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// Both cookies are expired by the response (MaxAge<0).
+	for _, name := range []string{sessionCookie, csrfCookie} {
+		c := findCookie(cookiesFrom(rec), name)
+		if c == nil || c.MaxAge >= 0 {
+			t.Errorf("logout should expire %s (got %+v)", name, c)
+		}
+	}
+
+	// The session is gone server-side: reusing the old session cookie now 401s.
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.AddCookie(sess)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("stacks after logout = %d, want 401", rec.Code)
+	}
+}
+
 func TestTrustedHeaderAuth(t *testing.T) {
 	stacksDir := t.TempDir()
 	db, err := store.Open(t.TempDir())

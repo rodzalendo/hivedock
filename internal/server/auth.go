@@ -369,7 +369,10 @@ func (a *api) bootstrapAdmin() bool {
 	return true
 }
 
-// authLogout deletes the session and clears cookies. Behind requireAuth.
+// authLogout deletes the session and clears cookies. Intentionally NOT behind
+// requireAuth (see the route registration): it is the recovery valve for a
+// stale/desynced CSRF cookie, so it must not itself require one. Idempotent —
+// with no session cookie it just clears (already-absent) cookies and 204s.
 func (a *api) authLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" && a.db != nil {
 		if err := a.db.DeleteSession(c.Value); err != nil {
