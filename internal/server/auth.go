@@ -68,6 +68,23 @@ func (a *api) requireAuth(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
+		// Self-heal a missing CSRF cookie. A session cookie and its CSRF cookie
+		// are minted together at login, but they can desynchronize — a session
+		// that outlives a redeploy which changed the cookie scheme, or plain
+		// browser eviction of the (non-HttpOnly) CSRF cookie. When that happens
+		// the session stays valid but every mutation 403s forever, because
+		// nothing ever reissued the CSRF cookie. Reissue it on safe requests
+		// (the SPA polls several per minute), so the next mutation has a matching
+		// token instead of a permanently stuck 403. Never on unsafe requests:
+		// that would defeat the double-submit check by handing the caller a fresh
+		// pair mid-mutation.
+		if isSafeMethod(r.Method) {
+			if _, err := r.Cookie(csrfCookie); err != nil {
+				if csrf, err := auth.NewToken(); err == nil {
+					a.setCSRFCookie(w, r, csrf)
+				}
+			}
+		}
 		// Double-submit CSRF check for state-changing requests only.
 		if !isSafeMethod(r.Method) && !csrfOK(r) {
 			writeError(w, http.StatusForbidden, "invalid or missing CSRF token")
@@ -382,17 +399,22 @@ func (a *api) startSession(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *api) setSessionCookies(w http.ResponseWriter, r *http.Request, session, csrf string) {
-	secure := isHTTPS(r)
-	expiry := time.Now().Add(sessionTTL)
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: session, Path: "/",
-		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
-		Expires: expiry, MaxAge: int(sessionTTL.Seconds()),
+		HttpOnly: true, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode,
+		Expires: time.Now().Add(sessionTTL), MaxAge: int(sessionTTL.Seconds()),
 	})
+	a.setCSRFCookie(w, r, csrf)
+}
+
+// setCSRFCookie sets just the CSRF cookie. Deliberately not HttpOnly so the SPA
+// can read it and echo it back in the X-CSRF-Token header (double-submit). Used
+// at login (alongside the session cookie) and by requireAuth's self-heal.
+func (a *api) setCSRFCookie(w http.ResponseWriter, r *http.Request, csrf string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: csrfCookie, Value: csrf, Path: "/",
-		HttpOnly: false, Secure: secure, SameSite: http.SameSiteLaxMode,
-		Expires: expiry, MaxAge: int(sessionTTL.Seconds()),
+		HttpOnly: false, Secure: isHTTPS(r), SameSite: http.SameSiteLaxMode,
+		Expires: time.Now().Add(sessionTTL), MaxAge: int(sessionTTL.Seconds()),
 	})
 }
 

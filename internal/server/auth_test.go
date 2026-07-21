@@ -184,6 +184,76 @@ func TestLoginRateLimited(t *testing.T) {
 	}
 }
 
+// TestCSRFCookieSelfHeal is the regression guard for the "update check / save
+// stopped working with 'invalid or missing CSRF token'" report: a session that
+// outlives the CSRF cookie (redeploy, browser eviction) left the session valid
+// but every mutation permanently 403ing, because nothing reissued the CSRF
+// cookie. A safe request must now hand back a fresh one.
+func TestCSRFCookieSelfHeal(t *testing.T) {
+	s := authTestServer(t)
+	h := s.mux
+	rec := postJSON(t, h, "/api/auth/setup", map[string]string{"username": "admin", "password": "hunter2!pass", "token": s.setupToken})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup failed: %d", rec.Code)
+	}
+	sess := findCookie(cookiesFrom(rec), sessionCookie)
+
+	// Simulate the broken state: valid session cookie, NO csrf cookie. A
+	// mutation with neither csrf cookie nor header must still 403 (we don't
+	// trust an absent cookie), and it must NOT be the request that heals.
+	body, _ := json.Marshal(map[string]bool{"hidden": true})
+	req := httptest.NewRequest(http.MethodPut, "/api/home/foo/bar/visibility", bytes.NewReader(body))
+	req.AddCookie(sess)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("mutation with no csrf cookie = %d, want 403", rec.Code)
+	}
+	if findCookie(cookiesFrom(rec), csrfCookie) != nil {
+		t.Error("an unsafe request must not reissue the csrf cookie (would defeat double-submit)")
+	}
+
+	// A safe request (the SPA polls these constantly) reissues the csrf cookie.
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.AddCookie(sess)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authenticated GET = %d, want 200", rec.Code)
+	}
+	healed := findCookie(cookiesFrom(rec), csrfCookie)
+	if healed == nil || healed.Value == "" {
+		t.Fatal("safe request did not reissue the csrf cookie")
+	}
+	if healed.HttpOnly {
+		t.Error("reissued csrf cookie must be readable by JS (not HttpOnly)")
+	}
+
+	// With the healed cookie echoed back, the mutation now works — the SPA has
+	// recovered without a re-login.
+	req = httptest.NewRequest(http.MethodPut, "/api/home/foo/bar/visibility", bytes.NewReader(body))
+	req.AddCookie(sess)
+	req.AddCookie(healed)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(csrfHeader, healed.Value)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("mutation after self-heal = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// A GET that already has a csrf cookie must not churn it (stable value).
+	req = httptest.NewRequest(http.MethodGet, "/api/stacks", nil)
+	req.AddCookie(sess)
+	req.AddCookie(healed)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if c := findCookie(cookiesFrom(rec), csrfCookie); c != nil && c.Value != healed.Value {
+		t.Error("csrf cookie should be left alone when already present")
+	}
+}
+
 func TestTrustedHeaderAuth(t *testing.T) {
 	stacksDir := t.TempDir()
 	db, err := store.Open(t.TempDir())
