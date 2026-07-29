@@ -5,6 +5,7 @@ import {
   saveSettings,
   pruneSystem,
   initGitRepo,
+  gitPull,
   generateApiToken,
   revokeApiToken,
   fetchRegistries,
@@ -336,6 +337,21 @@ function GitSection({
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [pullNote, setPullNote] = useState<string | null>(null);
+
+  async function onPull() {
+    setPulling(true);
+    setPullNote(null);
+    try {
+      setPullNote(await gitPull());
+      onSaved(); // refresh the commit sha; changed stacks refresh over the socket
+    } catch (err) {
+      setPullNote(err instanceof Error ? err.message : t("settings.git.pullFailed"));
+    } finally {
+      setPulling(false);
+    }
+  }
 
   async function onInit() {
     setBusy(true);
@@ -402,6 +418,39 @@ function GitSection({
         </div>
       )}
       {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}
+
+      {data.gitRemote && (
+        <div className="mt-4 border-t border-zinc-800 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-zinc-200">{t("settings.git.remoteTitle")}</p>
+              <p
+                className="truncate font-mono text-[11px] text-zinc-500"
+                title={data.gitRemote}
+              >
+                {data.gitRemote}
+                {data.gitBranch ? ` · ${data.gitBranch}` : ""}
+                {data.gitCommit ? ` @ ${data.gitCommit}` : ""}
+              </p>
+            </div>
+            <button
+              onClick={onPull}
+              disabled={pulling}
+              className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {pulling ? t("settings.git.pulling") : t("settings.git.pull")}
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+            {t("settings.git.pullDesc")}
+          </p>
+          {pullNote && (
+            <p className="mt-2 whitespace-pre-wrap font-mono text-[11px] text-zinc-400">
+              {pullNote}
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

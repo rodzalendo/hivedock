@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUpdates,
@@ -163,43 +163,91 @@ export default function Updates() {
     setSelected(allSelected ? new Set() : new Set(actionable.map((e) => e.image)));
   }
 
-  // Digest updates (a latest-style tag whose digest moved) can't be applied by
-  // rewriting the tag — the fix is `compose up --pull always` on each stack
-  // using the image. Track those stacks and re-check once their deploys end,
-  // which confirms the new digest and clears the row spinners.
-  const pendingStacks = useRef<Set<string>>(new Set());
+  // A running update batch: the stacks still redeploying, whether any failed,
+  // and the images being applied. The batch resolves the instant every stack
+  // has finished redeploying (deploy:end) — that's when we drop the updated
+  // rows, instead of waiting on the slow full registry re-check to confirm them
+  // (which is what used to leave just-applied rows lingering with a spinner).
+  // "Update all" and the per-row applies all guard on `busy`, so only one batch
+  // runs at a time.
+  const batch = useRef<{
+    pending: Set<string>;
+    failed: boolean;
+    images: string[];
+  } | null>(null);
+
+  const finishBatch = useCallback(() => {
+    const b = batch.current;
+    if (!b) return;
+    batch.current = null;
+    if (!b.failed) {
+      // Every stack redeployed cleanly → mark these rows up to date right now so
+      // they leave the "Available" list immediately. The background re-check
+      // below is the source of truth and corrects anything that didn't move.
+      qc.setQueryData<UpdateEntry[]>(["updates"], (prev) =>
+        prev?.map((e) =>
+          b.images.includes(e.image)
+            ? {
+                ...e,
+                hasUpdate: false,
+                kind: "uptodate",
+                candidate: undefined,
+                diff: undefined,
+              }
+            : e,
+        ),
+      );
+    }
+    setApplyingImages(new Set());
+    setNote(
+      b.failed ? "Some stacks failed to redeploy — check the stack's Logs." : null,
+    );
+    // Reconcile against the registry in the background; the true state lands via
+    // the updates:changed event and refreshes the list.
+    checkUpdates().catch(() => {});
+  }, [qc]);
+
+  function startBatch(stacks: string[], images: string[]) {
+    batch.current = { pending: new Set(stacks), failed: false, images };
+    setApplyingImages(new Set(images));
+    // Safety net: if a deploy:end is ever lost (e.g. the socket dropped),
+    // resolve the batch anyway so the UI can't spin forever.
+    window.setTimeout(() => {
+      if (batch.current?.images === images) finishBatch();
+    }, 180_000);
+  }
+
+  // Resolve the batch as its stacks finish redeploying: each successful
+  // deploy:end drops a pending stack, and the last one clears the batch. A
+  // failed deploy keeps the row (the re-check re-surfaces the pending update).
   useEffect(() => {
     const onDeploy = (ev: Event) => {
       const msg = (ev as CustomEvent).detail as {
         type: string;
-        payload?: { stack?: string };
+        payload?: { stack?: string; ok?: boolean };
       };
       if (msg.type !== "deploy:end" || !msg.payload?.stack) return;
-      if (!pendingStacks.current.delete(msg.payload.stack)) return;
-      if (pendingStacks.current.size === 0) {
-        checkUpdates().catch(() => {});
-      }
+      const b = batch.current;
+      if (!b || !b.pending.delete(msg.payload.stack)) return;
+      if (msg.payload.ok === false) b.failed = true;
+      if (b.pending.size === 0) finishBatch();
     };
     window.addEventListener("hivedock:deploy", onDeploy);
     return () => window.removeEventListener("hivedock:deploy", onDeploy);
-  }, []);
+  }, [finishBatch]);
 
   async function applyDigest(e: UpdateEntry) {
     if (busy) return;
-    setApplyingImages((prev) => new Set(prev).add(e.image));
     setNote(null);
     try {
       const stacks = [...new Set(e.usedBy.map((u) => u.stack))];
-      for (const s of stacks) {
-        pendingStacks.current.add(s);
-        await runStackAction(s, "update");
-      }
+      startBatch(stacks, [e.image]);
+      for (const s of stacks) await runStackAction(s, "update");
       setNote("Pulling the new image & redeploying — this can take a minute…");
-      // Cleared by the updates:changed event after the post-deploy re-check.
-      window.setTimeout(() => setApplyingImages(new Set()), 180_000);
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "Update failed.");
+      batch.current = null;
       setApplyingImages(new Set());
+      setNote(err instanceof Error ? err.message : "Update failed.");
     }
   }
 
@@ -251,9 +299,9 @@ export default function Updates() {
     if (!review || busy) return;
     const { edits, digests } = review;
     setReview(null);
-    setApplyingImages(
-      new Set([...edits.map((e) => e.image), ...digests.map((d) => d.image)]),
-    );
+    const images = [
+      ...new Set([...edits.map((e) => e.image), ...digests.map((d) => d.image)]),
+    ];
     setNote(null);
     try {
       const upStacks = new Set<string>();
@@ -261,36 +309,28 @@ export default function Updates() {
         await applyUpdate(e.stack, e.service, e.tag, e.sha256);
         upStacks.add(e.stack);
       }
-      // Digest stacks pull-always and get re-checked once their deploy ends
-      // (via the deploy:end listener above).
+      // Digest stacks pull-always; a stack in both sets only needs that one
+      // pull-always redeploy.
       const pullStacks = new Set<string>();
-      for (const d of digests) {
-        for (const s of d.stacks) {
-          pullStacks.add(s);
-          pendingStacks.current.add(s);
-        }
-      }
-      // Pull-always wins when a stack is in both sets — one redeploy covers it.
+      for (const d of digests) for (const s of d.stacks) pullStacks.add(s);
       for (const s of pullStacks) upStacks.delete(s);
+
+      // Arm the batch before firing any redeploy so no deploy:end is missed; it
+      // resolves — and clears these rows — as the redeploys finish.
+      startBatch([...pullStacks, ...upStacks], images);
       for (const s of pullStacks) await runStackAction(s, "update");
       for (const s of upStacks) await runStackAction(s, "up");
 
       const stackCount = upStacks.size + pullStacks.size;
-      const imageCount = new Set([
-        ...edits.map((e) => e.image),
-        ...digests.map((d) => d.image),
-      ]).size;
       setNote(
-        `Updating ${imageCount} image${imageCount === 1 ? "" : "s"} across ${stackCount} stack${stackCount === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
+        `Updating ${images.length} image${images.length === 1 ? "" : "s"} across ${stackCount} stack${stackCount === 1 ? "" : "s"} — pulling & redeploying, this can take a minute…`,
       );
       setSelected(new Set());
-      await checkUpdates();
-      // Cleared by the updates:changed event; never spin forever.
-      window.setTimeout(() => setApplyingImages(new Set()), 180_000);
     } catch (err) {
       // A 409 here means the file changed on disk between preview and apply.
-      setNote(err instanceof Error ? err.message : "Update failed.");
+      batch.current = null;
       setApplyingImages(new Set());
+      setNote(err instanceof Error ? err.message : "Update failed.");
     }
   }
 

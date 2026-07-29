@@ -20,7 +20,9 @@ import {
   StatusDot,
 } from "../components/ui";
 import { useI18n } from "../i18n";
-import { PencilIcon, RestartIcon, SpinnerIcon, TrashIcon } from "../components/icons";
+import { dockerRunToCompose } from "../dockerRun";
+import { PencilIcon, RestartIcon, SpinnerIcon, TerminalIcon, TrashIcon } from "../components/icons";
+import ContainerTerminal from "../components/ContainerTerminal";
 import HostStrip from "../components/HostStrip";
 import { useHashRoute, navigate } from "../useHashRoute";
 import LogsPanel from "../components/LogsPanel";
@@ -70,8 +72,8 @@ export default function Stacks() {
   const managed = stacks.filter((s) => s.origin === "managed");
   const external = stacks.filter((s) => s.origin === "external");
 
-  async function handleCreate(name: string) {
-    const created = await createStack(name);
+  async function handleCreate(name: string, compose?: string) {
+    const created = await createStack(name, compose);
     await qc.invalidateQueries({ queryKey: ["stacks"] });
     setSelected(created.name);
   }
@@ -85,7 +87,7 @@ export default function Stacks() {
           <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-400">
             Stacks
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <span className="text-xs text-zinc-600">{stacks.length}</span>
             <NewStack onCreate={handleCreate} existing={stacks.map((s) => s.name)} />
           </div>
@@ -158,24 +160,42 @@ export default function Stacks() {
   );
 }
 
-// NewStack is a small inline form for scaffolding a stack: name → dir + template
-// compose.yaml. On success the caller selects the stack on its Compose tab.
+// NewStack scaffolds a stack: name → dir + compose.yaml. Two modes — a blank
+// starter template, or "From docker run" which converts a pasted `docker run`
+// command into the compose file (client-side, see dockerRun.ts). On success the
+// caller selects the new stack on its Compose tab.
 function NewStack({
   onCreate,
   existing,
 }: {
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, compose?: string) => Promise<void>;
   existing: string[];
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"blank" | "run">("blank");
   const [name, setName] = useState("");
+  const [nameEdited, setNameEdited] = useState(false);
+  const [runCmd, setRunCmd] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Live conversion while typing a docker run command.
+  const conv = useMemo(
+    () => (runCmd.trim() ? dockerRunToCompose(runCmd) : null),
+    [runCmd],
+  );
+  // Suggest the parsed service name until the user types their own.
+  useEffect(() => {
+    if (mode === "run" && !nameEdited && conv?.serviceName) setName(conv.serviceName);
+  }, [mode, nameEdited, conv?.serviceName]);
+
   function reset() {
     setOpen(false);
+    setMode("blank");
     setName("");
+    setNameEdited(false);
+    setRunCmd("");
     setError(null);
   }
 
@@ -187,10 +207,15 @@ function NewStack({
       setError("A stack with that name already exists.");
       return;
     }
+    const compose = mode === "run" ? conv?.yaml : undefined;
+    if (mode === "run" && !compose) {
+      setError("Paste a docker run command first.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await onCreate(trimmed);
+      await onCreate(trimmed, compose);
       reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create stack.");
@@ -209,35 +234,122 @@ function NewStack({
     );
   }
 
+  const nameInput = (
+    <input
+      value={name}
+      onChange={(e) => {
+        setName(e.target.value);
+        setNameEdited(true);
+      }}
+      placeholder="stack-name"
+      onKeyDown={(e) => e.key === "Escape" && reset()}
+      className="w-32 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs outline-none focus:border-accent-500"
+    />
+  );
+
+  // Blank mode keeps the original compact inline form.
+  if (mode === "blank") {
+    return (
+      <form onSubmit={submit} className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setMode("run")}
+          title={t("stacks.fromRun")}
+          className="rounded-md border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          {t("stacks.fromRun")}
+        </button>
+        {nameInput}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-md bg-accent-600 px-2 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
+        >
+          {t("stacks.create")}
+        </button>
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-md px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+        >
+          ✕
+        </button>
+        {error && (
+          <span className="ml-1 max-w-40 truncate text-[11px] text-red-400" title={error}>
+            {error}
+          </span>
+        )}
+      </form>
+    );
+  }
+
+  // "From docker run" mode: a wider panel with a command box, live preview, and
+  // any conversion warnings.
   return (
-    <form onSubmit={submit} className="flex items-center gap-1">
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="stack-name"
-        onKeyDown={(e) => e.key === "Escape" && reset()}
-        className="w-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs outline-none focus:border-accent-500"
-      />
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-accent-600 px-2 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
-      >
-        Create
-      </button>
-      <button
-        type="button"
-        onClick={reset}
-        className="rounded-md px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-300"
-      >
-        ✕
-      </button>
-      {error && (
-        <span className="ml-1 max-w-40 truncate text-[11px] text-red-400" title={error}>
-          {error}
+    <form
+      onSubmit={submit}
+      className="absolute right-0 z-20 mt-2 w-[26rem] max-w-[90vw] space-y-2 rounded-lg border border-zinc-700 bg-zinc-900 p-3 shadow-2xl"
+    >
+      <div className="flex items-center gap-1 text-[11px]">
+        <button
+          type="button"
+          onClick={() => setMode("blank")}
+          className="rounded-md px-2 py-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          {t("stacks.blank")}
+        </button>
+        <span className="rounded-md bg-zinc-800 px-2 py-1 text-zinc-200">
+          {t("stacks.fromRun")}
         </span>
+        <button
+          type="button"
+          onClick={reset}
+          className="ml-auto rounded-md px-1.5 py-1 text-zinc-500 hover:text-zinc-300"
+        >
+          ✕
+        </button>
+      </div>
+      <textarea
+        autoFocus
+        value={runCmd}
+        onChange={(e) => setRunCmd(e.target.value)}
+        placeholder={t("stacks.runPlaceholder")}
+        rows={3}
+        spellCheck={false}
+        className="w-full resize-y rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] outline-none focus:border-accent-500"
+      />
+      {conv && (
+        <>
+          <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+            {t("stacks.runPreview")}
+          </div>
+          <pre className="max-h-48 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-2 font-mono text-[11px] leading-relaxed text-zinc-300">
+            {conv.yaml}
+          </pre>
+          {conv.warnings.length > 0 && (
+            <ul className="space-y-0.5 text-[11px] text-amber-400">
+              {conv.warnings.map((w, i) => (
+                <li key={i}>• {w}</li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
+      <div className="flex items-center gap-2">
+        {nameInput}
+        <button
+          type="submit"
+          disabled={busy || !conv}
+          className="rounded-md bg-accent-600 px-2.5 py-1 text-xs font-medium text-zinc-950 transition hover:bg-accent-500 disabled:opacity-40"
+        >
+          {t("stacks.create")}
+        </button>
+        {error && (
+          <span className="max-w-40 truncate text-[11px] text-red-400" title={error}>
+            {error}
+          </span>
+        )}
+      </div>
     </form>
   );
 }
@@ -720,6 +832,8 @@ function StackActions({
 function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shell, setShell] = useState(false);
+  const canShell = svc.state === "running" && !!svc.containerId;
 
   useEffect(() => {
     if (!busy) return;
@@ -789,6 +903,15 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
                 {error}
               </span>
             )}
+            {canShell && (
+              <button
+                onClick={() => setShell(true)}
+                title={`Open a shell in ${svc.name}`}
+                className="rounded-md border border-zinc-700 p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+              >
+                <TerminalIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               onClick={onRestart}
               disabled={busy}
@@ -802,6 +925,13 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
               )}
             </button>
           </span>
+          {shell && svc.containerId && (
+            <ContainerTerminal
+              containerId={svc.containerId}
+              title={stack ? `${stack} / ${svc.name}` : svc.name}
+              onClose={() => setShell(false)}
+            />
+          )}
         </td>
       )}
     </tr>

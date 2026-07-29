@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rogalinski/hivedock/internal/agent"
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/docker"
@@ -33,6 +34,12 @@ func main() {
 	// CLI — so handle it before the normal server bootstrap.
 	if len(os.Args) > 1 && os.Args[1] == "apply-update" {
 		os.Exit(runApplyUpdate(os.Args[2:]))
+	}
+	// `hivedock agent` is the remote multi-host agent (docs/MULTIHOST.md): it dials
+	// a manager and serves RPC against the local Docker socket. No server of its
+	// own — handle it before the normal bootstrap.
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		os.Exit(runAgent(os.Args[2:]))
 	}
 
 	cfg := config.Load()
@@ -160,6 +167,42 @@ func runApplyUpdate(args []string) int {
 	defer cancel()
 	if err := server.ApplyUpdate(ctx, logger, o); err != nil {
 		logger.Error("apply-update failed", "err", err)
+		return 1
+	}
+	return 0
+}
+
+// runAgent is the entry point for `hivedock agent`: it dials a HiveDock manager
+// and serves RPC against the local Docker socket (docs/MULTIHOST.md). Outbound-
+// only — no listener, store, or server of its own.
+func runAgent(args []string) int {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+	manager := fs.String("manager", os.Getenv("MANAGER_URL"), "manager base URL, e.g. https://hivedock.example.com (or MANAGER_URL)")
+	token := fs.String("token", os.Getenv("AGENT_TOKEN"), "shared token matching the manager's AGENT_TOKEN (or AGENT_TOKEN)")
+	name := fs.String("name", os.Getenv("AGENT_NAME"), "this host's name as shown in the manager (or AGENT_NAME)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	dc, err := docker.New()
+	if err != nil {
+		logger.Error("agent: docker client init", "err", err)
+		return 1
+	}
+	defer dc.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := agent.Run(ctx, agent.Options{
+		ManagerURL: *manager,
+		Token:      *token,
+		Name:       *name,
+		Version:    server.Version(),
+		Logger:     logger,
+		Docker:     dc,
+	}); err != nil {
+		logger.Error("agent exited", "err", err)
 		return 1
 	}
 	return 0

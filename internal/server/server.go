@@ -32,6 +32,10 @@ import (
 // Dockerfile. "dev" for local builds.
 var version = "dev"
 
+// Version returns the build-time version string (used by the `hivedock agent`
+// CLI, which reports it to the manager on connect).
+func Version() string { return version }
+
 // New builds the top-level HTTP handler. ctx bounds background loops (the
 // periodic update scheduler); cancel it to stop them.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) http.Handler {
@@ -69,8 +73,9 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 	checker := updates.NewChecker(regClient, local, logger)
 
 	api := &api{cfg: cfg, logger: logger, db: db, stacks: stacksSvc, hub: hub, host: host, docker: dockerClient, icons: icons, runner: compose.NewRunner(), checker: checker, login: newLoginLimiter(),
-		verify:  cosignVerifier{}, // §3.2 in-app signature verification (bundled cosign)
-		selfReg: regClient,        // resolves the candidate release digest to verify
+		verify:  cosignVerifier{},  // §3.2 in-app signature verification (bundled cosign)
+		selfReg: regClient,         // resolves the candidate release digest to verify
+		hosts:   newHostRegistry(), // multi-host: connected remote agents (docs/MULTIHOST.md)
 	}
 
 	// First-run: bootstrap the admin from env, or mint a one-time setup token.
@@ -87,6 +92,9 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 	r.Route("/api", func(r chi.Router) {
 		// Public: liveness + the auth bootstrap (status/setup/login).
 		r.Get("/health", api.health)
+		// Remote agents enroll here (token-gated, not session-gated —
+		// docs/MULTIHOST.md); disabled unless AGENT_TOKEN is set.
+		r.Get("/agent/connect", api.agentConnect)
 		r.Route("/auth", func(r chi.Router) {
 			r.Get("/status", api.authStatus)
 			r.Post("/setup", api.authSetup)
@@ -107,6 +115,9 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Use(api.requireAuth)
 			r.Use(api.enforceReadOnly)
 			r.Get("/ws", api.websocket)
+			r.Get("/containers/{id}/exec", api.containerExec)
+			r.Get("/hosts", api.listHosts)
+			r.Get("/hosts/{name}/containers", api.hostContainers)
 			r.Get("/stacks", api.listStacks)
 			r.Post("/stacks", api.createStack)
 			r.Get("/stacks/{name}", api.getStack)
@@ -125,6 +136,7 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Get("/settings", api.settings)
 			r.Put("/settings", api.updateSettings)
 			r.Post("/settings/git-init", api.gitInit)
+			r.Post("/settings/git-pull", api.gitPull)
 			r.Post("/settings/api-token", api.generateAPIToken)
 			r.Delete("/settings/api-token", api.revokeAPIToken)
 			r.Get("/settings/registries", api.listRegistries)
@@ -169,6 +181,7 @@ type api struct {
 	selfReg selfRegistry  // resolves the candidate release digest to verify/deploy
 	mux     http.Handler  // the built router (returned by New)
 	login   *loginLimiter // brute-force damper for login/setup
+	hosts   *hostRegistry // multi-host: connected remote agents (docs/MULTIHOST.md)
 
 	checking     atomic.Bool // guards against concurrent update-check runs
 	selfUpdating atomic.Bool // guards against concurrent self-updates

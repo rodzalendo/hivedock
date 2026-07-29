@@ -43,10 +43,20 @@ type createStackResponse struct {
 // template compose.yaml. It does not deploy — the user edits then deploys. Auth
 // + CSRF protected (mutating POST in the guarded group).
 func (a *api) createStack(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxComposeBytes)
 	var body struct {
 		Name string `json:"name"`
+		// Compose, when set, is written as the new stack's compose.yaml instead of
+		// the nginx starter (e.g. the output of the "docker run → compose"
+		// converter). It's the user's own compose text — validated on the Compose
+		// tab and at deploy, same as any edit — so it's written as-is here.
+		Compose string `json:"compose,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if _, isMax := err.(*http.MaxBytesError); isMax {
+			writeError(w, http.StatusRequestEntityTooLarge, "compose file too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -90,6 +100,9 @@ func (a *api) createStack(w http.ResponseWriter, r *http.Request) {
 	}
 	composeFile := filepath.Join(dir, "compose.yaml")
 	content := fmt.Sprintf(composeTemplate, name)
+	if body.Compose != "" {
+		content = body.Compose
+	}
 	if err := os.WriteFile(composeFile, []byte(content), 0o644); err != nil {
 		// Roll back the (empty) directory so a half-created stack isn't left behind.
 		_ = os.Remove(dir)

@@ -60,6 +60,68 @@ func TestGitInitAndCommit(t *testing.T) {
 	}
 }
 
+func TestGitRemoteAndPull(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("git not installed")
+	}
+	base := t.TempDir()
+	remote := filepath.Join(base, "remote.git")
+	src := filepath.Join(base, "src")
+	work := filepath.Join(base, "work") // stands in for STACKS_DIR
+
+	mustGit := func(dir string, args ...string) {
+		t.Helper()
+		if out, err := runGit(dir, args...); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	commit := func(dir, msg string) {
+		mustGit(dir, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+		mustGit(dir, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--no-gpg-sign", "-m", msg)
+	}
+
+	// A bare remote, an initial commit pushed from a source clone.
+	mustGit(base, "init", "--bare", remote)
+	mustGit(base, "clone", remote, src)
+	if err := os.WriteFile(filepath.Join(src, "compose.yaml"), []byte("services:\n  web:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commit(src, "init")
+	mustGit(src, "push", "origin", "HEAD:refs/heads/main")
+	mustGit(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+
+	// The "stacks dir" is a clone of that remote.
+	mustGit(base, "clone", remote, work)
+
+	url, branch, sha, ok := GitRemote(work)
+	if !ok || url == "" {
+		t.Fatalf("GitRemote ok=%v url=%q", ok, url)
+	}
+	if branch != "main" {
+		t.Errorf("branch = %q, want main", branch)
+	}
+	if sha == "" {
+		t.Error("commit is empty")
+	}
+	if _, _, _, ok := GitRemote(t.TempDir()); ok {
+		t.Error("a non-repo dir reported a remote")
+	}
+
+	// Advance the remote, then fast-forward the stacks dir into it.
+	if err := os.WriteFile(filepath.Join(src, "new.yaml"), []byte("services:\n  db:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commit(src, "add db")
+	mustGit(src, "push", "origin", "HEAD:refs/heads/main")
+
+	if _, err := GitPull(work); err != nil {
+		t.Fatalf("GitPull: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "new.yaml")); err != nil {
+		t.Errorf("pulled file missing after fast-forward: %v", err)
+	}
+}
+
 func gitLog(t *testing.T, dir string) []string {
 	t.Helper()
 	out, err := runGit(dir, "log", "--format=%s")

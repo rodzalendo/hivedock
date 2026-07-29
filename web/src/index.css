@@ -327,11 +327,13 @@ body {
   border-radius: 0 !important;
   image-rendering: pixelated;
 }
-/* Keep a single pixel-art signature: the logo wordmark. */
+/* Keep a single pixel-art signature: the logo wordmark. Pixelify Sans reads
+   smaller per-px than the other themes' Plex Mono wordmark (14.5px), so size it
+   up a touch to sit at the same optical size across all six themes. */
 :root[data-theme="fallout"] .brand-wordmark,
 :root[data-theme="cyberpunk"] .brand-wordmark {
   font-family: var(--font-display), "Pixelify Sans", monospace;
-  font-size: 1em;
+  font-size: 16px;
   letter-spacing: 0.04em;
 }
 

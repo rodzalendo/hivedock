@@ -198,6 +198,34 @@ func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, follow 
 	return rc, tty, nil
 }
 
+// ExecAttach starts an interactive, TTY-attached exec of cmd inside container id
+// and returns the hijacked bidirectional stream (the caller must Close it), plus
+// the exec ID used to resize the TTY. This is a per-container shell only — the
+// command is a fixed shell chosen by the server, never host access.
+func (c *Client) ExecAttach(ctx context.Context, id string, cmd []string) (types.HijackedResponse, string, error) {
+	created, err := c.cli.ContainerExecCreate(ctx, id, container.ExecOptions{
+		Tty:          true,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	})
+	if err != nil {
+		return types.HijackedResponse{}, "", fmt.Errorf("exec create %s: %w", id, err)
+	}
+	hj, err := c.cli.ContainerExecAttach(ctx, created.ID, container.ExecAttachOptions{Tty: true})
+	if err != nil {
+		return types.HijackedResponse{}, "", fmt.Errorf("exec attach %s: %w", id, err)
+	}
+	return hj, created.ID, nil
+}
+
+// ExecResize resizes an exec session's TTY (rows/cols), so full-screen programs
+// (htop, vim) render at the browser terminal's dimensions.
+func (c *Client) ExecResize(ctx context.Context, execID string, rows, cols uint) error {
+	return c.cli.ContainerExecResize(ctx, execID, container.ResizeOptions{Height: rows, Width: cols})
+}
+
 // declaredHostPorts reads a container's configured host port bindings via
 // inspect (HostConfig.PortBindings) — available even when the container is
 // stopped, unlike the port list from ContainerList. Best-effort: returns nil on

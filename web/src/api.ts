@@ -307,10 +307,16 @@ export interface CreatedStack {
   composeFile: string;
 }
 
-// createStack scaffolds a new managed stack (directory + template compose.yaml).
-// It does not deploy — the caller edits on the Compose tab, then deploys.
-export async function createStack(name: string): Promise<CreatedStack> {
-  const res = await mutate("/api/stacks", "POST", { name });
+// createStack scaffolds a new managed stack (directory + compose.yaml). It does
+// not deploy — the caller edits on the Compose tab, then deploys. Pass `compose`
+// to seed the file with custom content (e.g. the docker-run converter's output)
+// instead of the nginx starter template.
+export async function createStack(
+  name: string,
+  compose?: string,
+): Promise<CreatedStack> {
+  const body = compose ? { name, compose } : { name };
+  const res = await mutate("/api/stacks", "POST", body);
   return (await res.json()) as CreatedStack;
 }
 
@@ -456,6 +462,28 @@ export interface UpdateEntry {
 
 export const fetchUpdates = () => getJSON<UpdateEntry[]>("/api/updates");
 
+// Multi-host (docs/MULTIHOST.md): the local host plus any connected agents.
+export interface Host {
+  name: string;
+  local: boolean;
+  online: boolean;
+  version?: string;
+}
+export const fetchHosts = () => getJSON<Host[]>("/api/hosts");
+
+// A read-only container view from a (possibly remote) host.
+export interface RemoteContainer {
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  health?: string;
+  stack?: string;
+  service?: string;
+}
+export const fetchHostContainers = (host: string) =>
+  getJSON<RemoteContainer[]>(`/api/hosts/${encodeURIComponent(host)}/containers`);
+
 // setImageIgnore records/clears a user's choice to keep a pinned version and
 // hide its update from "Update all". Keyed by the full image reference.
 export async function setImageIgnore(
@@ -547,6 +575,9 @@ export interface Settings {
   updateMode: UpdateMode;
   gitAutoCommit: boolean; // §5.4 local audit trail of stack changes
   gitWorktree: boolean; // whether STACKS_DIR is a git repo (else offer to init)
+  gitRemote?: string; // origin URL when STACKS_DIR tracks a remote (enables Pull)
+  gitBranch?: string;
+  gitCommit?: string;
   apiTokenSet: boolean; // whether a read-only API token exists (§6.5)
   version: string;
 }
@@ -570,6 +601,13 @@ export async function saveSettings(patch: {
 export async function initGitRepo(): Promise<Settings> {
   const res = await mutate("/api/settings/git-init", "POST");
   return (await res.json()) as Settings;
+}
+
+// gitPull fast-forwards STACKS_DIR from its git remote (pull-only). Returns the
+// git output ("Already up to date." or a summary of what changed).
+export async function gitPull(): Promise<string> {
+  const res = await mutate("/api/settings/git-pull", "POST");
+  return ((await res.json()) as { result: string }).result;
 }
 
 // generateApiToken mints a read-only API token (§6.5). The plaintext is returned

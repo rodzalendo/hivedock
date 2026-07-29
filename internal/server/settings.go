@@ -19,11 +19,14 @@ type settingsResponse struct {
 	DataDir       string `json:"dataDir"`
 	CheckInterval string `json:"checkInterval"` // human duration, or "disabled"
 	PublicHost    string `json:"publicHost"`
-	AuthMode      string `json:"authMode"`      // "password" | "trusted header (forward auth)"
-	UpdateMode    string `json:"updateMode"`    // full | check-only | off (§3.4)
-	GitAutoCommit bool   `json:"gitAutoCommit"` // §5.4 local audit trail
-	GitWorktree   bool   `json:"gitWorktree"`   // whether STACKS_DIR is a git repo (drives the "initialize" UI)
-	APITokenSet   bool   `json:"apiTokenSet"`   // whether a read-only API token exists (§6.5)
+	AuthMode      string `json:"authMode"`            // "password" | "trusted header (forward auth)"
+	UpdateMode    string `json:"updateMode"`          // full | check-only | off (§3.4)
+	GitAutoCommit bool   `json:"gitAutoCommit"`       // §5.4 local audit trail
+	GitWorktree   bool   `json:"gitWorktree"`         // whether STACKS_DIR is a git repo (drives the "initialize" UI)
+	GitRemote     string `json:"gitRemote,omitempty"` // origin URL, when STACKS_DIR tracks one (drives "Pull from git")
+	GitBranch     string `json:"gitBranch,omitempty"`
+	GitCommit     string `json:"gitCommit,omitempty"`
+	APITokenSet   bool   `json:"apiTokenSet"` // whether a read-only API token exists (§6.5)
 	Version       string `json:"version"`
 }
 
@@ -96,6 +99,7 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.TrustedHeader != "" {
 		authMode = "trusted header (forward auth)"
 	}
+	gitRemote, gitBranch, gitCommit, _ := stacks.GitRemote(a.cfg.StacksDir)
 	writeJSON(w, http.StatusOK, settingsResponse{
 		StacksDir:     a.cfg.StacksDir,
 		DataDir:       a.cfg.DataDir,
@@ -105,9 +109,50 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 		UpdateMode:    a.appUpdateMode(),
 		GitAutoCommit: a.gitAutoCommitEnabled(),
 		GitWorktree:   stacks.IsGitWorktree(a.cfg.StacksDir),
+		GitRemote:     gitRemote,
+		GitBranch:     gitBranch,
+		GitCommit:     gitCommit,
 		APITokenSet:   a.apiTokenExists(),
 		Version:       version,
 	})
+}
+
+// gitPull fast-forwards STACKS_DIR from its git remote (pull-only GitOps). It is
+// refused when there's no remote or the server is read-only; a divergent history
+// fails cleanly (--ff-only). Changed stacks then show as drifted and can be
+// redeployed from the UI as usual.
+func (a *api) gitPull(w http.ResponseWriter, r *http.Request) {
+	if a.readOnlyReason != "" {
+		writeError(w, http.StatusServiceUnavailable, a.readOnlyReason)
+		return
+	}
+	if _, _, _, ok := stacks.GitRemote(a.cfg.StacksDir); !ok {
+		writeError(w, http.StatusConflict, "the stacks directory has no git remote to pull from")
+		return
+	}
+	// With auto-commit on, snapshot local edits first so the tree is clean and the
+	// fast-forward isn't refused for a dirty worktree.
+	if a.gitAutoCommitEnabled() {
+		if err := stacks.GitCommitAll(a.cfg.StacksDir, "snapshot before git pull"); err != nil {
+			a.logger.Warn("git pull: pre-snapshot", "err", err)
+		}
+	}
+	out, err := stacks.GitPull(a.cfg.StacksDir)
+	if err != nil {
+		msg := out
+		if msg == "" {
+			msg = err.Error()
+		}
+		a.logger.Warn("git pull", "err", err, "out", out)
+		writeError(w, http.StatusConflict, "git pull failed: "+msg)
+		return
+	}
+	a.logger.Info("git pull", "out", out)
+	a.hub.NotifyChanged("stacks:changed")
+	if out == "" {
+		out = "Already up to date."
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"result": out})
 }
 
 // gitInit initializes STACKS_DIR as a git repository (the one-click "initialize"

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchHome,
   fetchHomeLayout,
+  fetchUpdates,
   saveHomeLayout,
   setServiceVisibility,
   setServiceIcon,
@@ -82,6 +83,20 @@ export default function Dashboard() {
     queryFn: fetchHomeLayout,
     staleTime: 60_000,
   });
+  // Which stacks have an available image update — drives the card badge, same
+  // source as the Stacks list so the two stay in agreement.
+  const { data: updates } = useQuery({
+    queryKey: ["updates"],
+    queryFn: fetchUpdates,
+    staleTime: 30_000,
+  });
+  const stacksWithUpdate = useMemo(() => {
+    const set = new Set<string>();
+    for (const u of updates ?? []) {
+      if (u.hasUpdate && !u.ignored) u.usedBy.forEach((x) => set.add(x.stack));
+    }
+    return set;
+  }, [updates]);
   const qc = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -625,6 +640,7 @@ export default function Dashboard() {
               key={keyOf(e)}
               entry={e}
               tile={tile}
+              hasUpdate={stacksWithUpdate.has(e.stack)}
               hiddenSiblings={subsByStack.get(e.stack)}
             />
           ))}
@@ -677,6 +693,7 @@ export default function Dashboard() {
                   entry={e}
                   editing
                   tile={tile}
+                  hasUpdate={stacksWithUpdate.has(e.stack)}
                   hiddenSiblings={subsByStack.get(e.stack)}
                 />
               </div>
@@ -769,6 +786,7 @@ export default function Dashboard() {
                       entry={e}
                       editing={editing}
                       tile={tile}
+                      hasUpdate={stacksWithUpdate.has(e.stack)}
                       hiddenSiblings={subsByStack.get(e.stack)}
                     />
                   </div>
@@ -816,11 +834,13 @@ function Card({
   entry,
   editing,
   tile = tileSizes[2],
+  hasUpdate,
   hiddenSiblings,
 }: {
   entry: HomeEntry;
   editing?: boolean;
   tile?: (typeof tileSizes)[number];
+  hasUpdate?: boolean;
   hiddenSiblings?: HomeEntry[];
 }) {
   const qc = useQueryClient();
@@ -845,6 +865,14 @@ function Card({
             {entry.name}
           </span>
           <StatusDotSmall status={entry.status} health={entry.health} />
+          {hasUpdate && (
+            <span
+              title="An image update is available for this stack"
+              className="shrink-0 rounded bg-hive-600/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-hive-500"
+            >
+              update
+            </span>
+          )}
         </div>
         {tile.showSub && (
           <div className={`truncate text-zinc-500 ${tile.sub}`}>

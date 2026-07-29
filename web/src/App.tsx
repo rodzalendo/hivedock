@@ -4,6 +4,7 @@ import Stacks from "./views/Stacks";
 import Dashboard from "./views/Dashboard";
 import Updates from "./views/Updates";
 import Settings from "./views/Settings";
+import Hosts from "./views/Hosts";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useLiveUpdates } from "./useLiveUpdates";
 import { useHashRoute, navigate } from "./useHashRoute";
@@ -12,6 +13,7 @@ import {
   fetchAppUpdate,
   fetchAuthStatus,
   fetchHealth,
+  fetchHosts,
   fetchUpdates,
   logout,
   selfUpdate,
@@ -23,26 +25,35 @@ import {
   StacksIcon,
   UpdatesIcon,
   SettingsIcon,
+  HostsIcon,
 } from "./components/icons";
 
-type View = "home" | "stacks" | "updates" | "settings";
+type View = "home" | "stacks" | "updates" | "settings" | "hosts";
 
-const nav: {
+type NavItem = {
   id: View;
   labelKey: string;
   Icon: (p: { className?: string }) => JSX.Element;
-}[] = [
+};
+
+const nav: NavItem[] = [
   { id: "home", labelKey: "nav.home", Icon: HomeIcon },
   { id: "stacks", labelKey: "nav.stacks", Icon: StacksIcon },
   { id: "updates", labelKey: "nav.updates", Icon: UpdatesIcon },
   { id: "settings", labelKey: "nav.settings", Icon: SettingsIcon },
 ];
 
+// The Hosts tab appears only once a remote agent is connected — single-host
+// users never see multi-host chrome (docs/MULTIHOST.md).
+const hostsNav: NavItem = { id: "hosts", labelKey: "nav.hosts", Icon: HostsIcon };
+
 export default function App() {
   // The URL hash is the router (#/stacks, #/updates, …), so a refresh stays
   // on the current page. Unknown/empty hashes land on Home.
   const route = useHashRoute();
-  const view: View = nav.some((n) => n.id === route[0])
+  const view: View = ["home", "stacks", "updates", "settings", "hosts"].includes(
+    route[0] ?? "",
+  )
     ? (route[0] as View)
     : "home";
   const qc = useQueryClient();
@@ -64,6 +75,16 @@ export default function App() {
   // Ignored (keep-pinned) updates don't count toward the badge.
   const updateCount =
     updates?.filter((u) => u.hasUpdate && !u.ignored).length ?? 0;
+
+  // Multi-host: show the Hosts tab only when a remote agent is connected (more
+  // than just the local host).
+  const { data: hosts } = useQuery({
+    queryKey: ["hosts"],
+    queryFn: fetchHosts,
+    staleTime: 10_000,
+    refetchInterval: 30_000,
+  });
+  const navItems = (hosts?.length ?? 0) > 1 ? [...nav, hostsNav] : nav;
 
   async function handleLogout() {
     try {
@@ -97,7 +118,7 @@ export default function App() {
         </div>
 
         <nav className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:space-y-0.5 md:overflow-visible md:px-3 md:pb-0">
-          {nav.map(({ id, labelKey, Icon }) => (
+          {navItems.map(({ id, labelKey, Icon }) => (
             <button
               key={id}
               onClick={() => navigate(id)}
@@ -132,6 +153,7 @@ export default function App() {
           {view === "stacks" && <Stacks />}
           {view === "updates" && <Updates />}
           {view === "settings" && <Settings />}
+          {view === "hosts" && <Hosts />}
         </ErrorBoundary>
       </main>
     </div>

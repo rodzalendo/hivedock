@@ -35,6 +35,11 @@ type Config struct {
 	AdminPasswordFile string // ADMIN_PASSWORD_FILE — path to a file holding the password
 
 	CheckInterval time.Duration // CHECK_INTERVAL — periodic update check cadence (0 disables)
+
+	// Multi-host (docs/MULTIHOST.md). When AgentToken is set, this instance is a
+	// MANAGER: remote `hivedock agent` processes may enroll by presenting the same
+	// token. Empty ⇒ the agent-connect endpoint is disabled (multi-host is opt-in).
+	AgentToken string // AGENT_TOKEN — shared bearer token for agent enrollment
 }
 
 // Load reads configuration from the environment, applying defaults suitable for
@@ -54,6 +59,8 @@ func Load() Config {
 		AdminPasswordFile: strings.TrimSpace(env("ADMIN_PASSWORD_FILE", "")),
 
 		CheckInterval: envDuration("CHECK_INTERVAL", 30*time.Minute),
+
+		AgentToken: strings.TrimSpace(env("AGENT_TOKEN", "")),
 	}
 }
 

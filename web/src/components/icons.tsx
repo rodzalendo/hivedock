@@ -239,6 +239,44 @@ export function TrashIcon({ className }: IconProps) {
   );
 }
 
+export function HostsIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="2" y="2.5" width="12" height="4.5" rx="1" />
+      <rect x="2" y="9" width="12" height="4.5" rx="1" />
+      <path d="M4.5 4.75h0M4.5 11.25h0" />
+    </svg>
+  );
+}
+
+export function TerminalIcon({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <path d="M4 6l2 2-2 2" />
+      <path d="M8.5 10.5h3.5" />
+    </svg>
+  );
+}
+
 export function ImageIcon({ className }: IconProps) {
   return (
     <svg

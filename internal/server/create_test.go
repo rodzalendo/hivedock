@@ -49,6 +49,29 @@ func TestCreateStackWritesTemplate(t *testing.T) {
 	}
 }
 
+func TestCreateStackWithCompose(t *testing.T) {
+	dir := t.TempDir()
+	h := handlerWithStacksDir(t, dir)
+
+	custom := "services:\n  web:\n    image: caddy:2\n    ports:\n      - \"80:80\"\n"
+	b, _ := json.Marshal(map[string]string{"name": "site", "compose": custom})
+	req := httptest.NewRequest(http.MethodPost, "/api/stacks", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d, want 201 (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "site", "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read created compose: %v", err)
+	}
+	if string(data) != custom {
+		t.Errorf("compose written = %q, want the provided body %q", data, custom)
+	}
+}
+
 func TestCreateStackConflict(t *testing.T) {
 	dir := t.TempDir()
 	h := handlerWithStacksDir(t, dir)

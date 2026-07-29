@@ -1,7 +1,16 @@
 name: Release
 
 # Publishes multi-arch images to GHCR and cosign-signs them:
-#   - push tag vX.Y.Z    -> :X.Y.Z, :X.Y, :latest
+#   - push tag vX.Y.Z          -> :X.Y.Z, :X.Y, :latest   (a stable release)
+#   - push tag vX.Y.Z-<pre>    -> :X.Y.Z-<pre> only        (a pre-release / test build)
+#
+# Pre-release tags (any tag with a hyphen, e.g. v1.3.0-rc.1) are a TEST CHANNEL:
+# they publish only their exact :X.Y.Z-<pre> image and never move :latest or the
+# :X.Y line, so new `docker pull …:latest` installs keep getting the last stable
+# release. Existing installs aren't offered them either: the in-app self-update
+# only offers a candidate on the SAME track (same version-suffix), so a prod box
+# on 1.2.9 (empty suffix) never sees 1.3.0-rc.1 (suffix "-rc.1"). Ship 1.3 for
+# testing as v1.3.0-rc.N; cut plain v1.3.0 when it's ready to be latest.
 #
 # Releases are cut from tags only. There is no rolling tag: a push to main
 # publishes nothing, so :latest always points at a deliberate, versioned
@@ -39,7 +48,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -88,3 +97,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          # A hyphenated tag (v1.3.0-rc.1) is a pre-release: mark it so on GitHub
+          # too, so the "Latest release" badge stays on the last stable version.
+          prerelease: ${{ contains(github.ref, '-') }}

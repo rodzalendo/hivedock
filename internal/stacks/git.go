@@ -1,10 +1,12 @@
 package stacks
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Git auto-commit (HARDENING.md §5.4) keeps a local audit trail of every change
@@ -51,6 +53,48 @@ func GitCommitAll(dir, action string) error {
 		return fmt.Errorf("git commit: %w: %s", err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// GitRemote returns the "origin" URL, current branch, and short commit for dir's
+// repo, with ok=false when dir isn't a worktree or has no origin remote. Used to
+// drive the "Pull from git" UI: it only appears when there's a remote to pull.
+func GitRemote(dir string) (url, branch, commit string, ok bool) {
+	if !IsGitWorktree(dir) {
+		return "", "", "", false
+	}
+	u, err := runGit(dir, "remote", "get-url", "origin")
+	if err != nil || strings.TrimSpace(u) == "" {
+		return "", "", "", false
+	}
+	url = strings.TrimSpace(u)
+	if b, err := runGit(dir, "rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		branch = strings.TrimSpace(b)
+	}
+	if c, err := runGit(dir, "rev-parse", "--short", "HEAD"); err == nil {
+		commit = strings.TrimSpace(c)
+	}
+	return url, branch, commit, true
+}
+
+// GitPull fast-forwards dir's repo from origin. --ff-only never creates a merge
+// commit: if local history diverged (e.g. local auto-commits the remote doesn't
+// have), it fails cleanly instead of entangling the trees — pull-only GitOps, no
+// surprises. Bounded by a timeout, and prompts stay disabled so a private repo
+// fails fast rather than hanging on a credential prompt.
+func GitPull(dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", dir, "pull", "--ff-only")
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"HOME="+dir,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("git pull: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // runGit runs one git command in dir. The environment is scoped so commits are
