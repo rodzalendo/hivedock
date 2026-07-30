@@ -41,32 +41,10 @@ func (a *api) gitAutoCommitEnabled() bool {
 	return err == nil && ok && v == "1"
 }
 
-// gitSnapshotBefore commits any pending out-of-band changes under STACKS_DIR as a
-// snapshot, before a HiveDock-initiated write (§5.4). No-op when auto-commit is
-// off. On failure it writes the error response and returns false so the caller
-// aborts the write — a broken paper trail stops the press.
-func (a *api) gitSnapshotBefore(w http.ResponseWriter, action string) bool {
-	if !a.gitAutoCommitEnabled() {
-		return true
-	}
-	if err := stacks.GitCommitAll(a.cfg.StacksDir, "snapshot before "+action); err != nil {
-		a.logger.Error("git snapshot before write", "action", action, "err", err)
-		writeError(w, http.StatusInternalServerError,
-			"git snapshot failed — not saving (git auto-commit is on): "+err.Error())
-		return false
-	}
-	return true
-}
-
-// gitCommitAfter commits a completed HiveDock write. No-op when auto-commit is
-// off. The file is already on disk, so the caller surfaces any error rather than
-// rolling back.
-func (a *api) gitCommitAfter(action string) error {
-	if !a.gitAutoCommitEnabled() {
-		return nil
-	}
-	return stacks.GitCommitAll(a.cfg.StacksDir, action)
-}
+// Note: git auto-commit for stack-file writes now runs inside hostops.LocalBackend
+// (the manager passes gitAutoCommitEnabled as its commit seam), so the former
+// gitSnapshotBefore/gitCommitAfter handler helpers were removed. gitPull below
+// still snapshots directly since it isn't a per-stack write.
 
 // effectiveCheckInterval resolves the update-check cadence: an in-app override
 // wins over the CHECK_INTERVAL env default. 0 = disabled. The scheduler reads
