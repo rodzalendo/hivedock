@@ -32,7 +32,7 @@ You keep your SSH-and-YAML workflow. You just get a UI that respects it.
 
 ![Managing a stack](docs/screenshots/stacks1.png)
 
-Every stack and container in one list. Edit compose and `.env` in the browser (validated before it saves), then deploy, pull, restart, or stop with the output streaming live. Restart a single service without touching the rest, tail per-service logs, and if a running container drifts from its file you get a badge that explains why. Failing health checks are flagged too, so a container that's running but unhealthy stands out. Containers you didn't create show up too, read-only, so nothing on screen is a lie.
+Every stack and container in one list. Edit compose and `.env` in the browser (validated before it saves), then deploy, pull, restart, or stop with the output streaming live. Restart a single service without touching the rest, tail per-service logs, and open an interactive shell right inside any container. Start a stack from a blank template or paste a `docker run` command and HiveDock converts it to compose for you. If a running container drifts from its file you get a badge that explains why, failing health checks are flagged so a container that's running but unhealthy stands out, and containers you didn't create show up too, read-only, so nothing on screen is a lie.
 
 ## Dashboard
 
@@ -61,6 +61,12 @@ Six looks to pick from in Settings: Hive Dark, Modern Glossy, Minimalist Paper, 
 
 HiveDock watches for its own new release and updates with one click from the sidebar. Releases are cosign-signed, and it verifies the signature and pins the exact image before it touches anything. You also get a read-only API token for monitoring tools, one-click cleanup of old image layers, and an automatic switch to read-only mode if your stacks folder isn't mounted the way Compose needs.
 
+## Many hosts, one HiveDock
+
+Run Compose on more than one box? Manage them all from a single HiveDock. On each extra host you run a lightweight `hivedock agent` (the same image, a different command) that **dials out** to your main instance over one WebSocket — so the remote host needs no inbound port, no exposed Docker socket, and works fine behind NAT or a firewall. The Docker socket never touches the network; only HiveDock's own small RPC does.
+
+Add a host in **Settings → Hosts** (it mints a token and hands you the exact `docker run` command), then a host switcher appears on the Stacks page. Everything you do locally you can do on a remote host — deploy with live output, edit compose and `.env`, stream logs, restart, create or delete, apply image updates, and open a shell in a container — with the same guardrails (path confinement, optimistic locks, read-only safety) enforced on the host that owns the files. See [docs/MULTIHOST.md](docs/MULTIHOST.md).
+
 ## HiveDock vs. the usual trio
 
 | | Dockge / Portainer | Homepage / Heimdall | Watchtower / WUD | HiveDock |
@@ -70,7 +76,7 @@ HiveDock watches for its own new release and updates with one click from the sid
 | Check for image updates | | | ✅ | ✅ |
 | Apply updates from the app, when you decide | | | auto only | ✅ |
 | Update itself from the app | | | | ✅ |
-| Scope | one host | any | any | one host |
+| Scope | one host | any | any | one host, or many via an agent |
 
 ## Install
 
@@ -98,7 +104,7 @@ services:
 
 Open `http://<your-host>:5001`, create the admin account on the first screen, and your stacks show up right away. After that you update HiveDock itself from the sidebar.
 
-> Tags: `:latest` is the newest stable release, `:X.Y.Z` pins one, `:edge` follows `main`. Point your own compose at `:latest` so one-click self-update stays clean.
+> Tags: `:latest` is the newest stable release, `:X.Y.Z` pins one (`:X.Y` tracks a minor line). Point your own compose at `:latest` so one-click self-update stays clean.
 
 ## Configuration
 
@@ -114,6 +120,7 @@ Set with environment variables:
 | `AUTH_TRUSTED_HEADER` | unset | SSO header with the logged-in user (needs the CIDRs below). |
 | `AUTH_TRUSTED_PROXY_CIDRS` | unset | Networks your auth proxy sits in. |
 | `ADMIN_USER` / `ADMIN_PASSWORD_FILE` | unset | Create the first admin without the setup screen. |
+| `AGENT_TOKEN` | unset | Enables multi-host: the shared token remote `hivedock agent`s use to enroll. You can also mint one in Settings → Hosts instead. See [docs/MULTIHOST.md](docs/MULTIHOST.md). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. |
 
 A single admin account is made on first run, gated by a one-time token printed to the log (grab it with `docker logs hivedock`). Sessions are an HttpOnly cookie, every change is CSRF-protected, and logins are rate-limited. Want SSO with no second login? Put HiveDock behind a forward-auth proxy (Authelia, authentik, Caddy) and set `AUTH_TRUSTED_HEADER` plus `AUTH_TRUSTED_PROXY_CIDRS`. Behind any reverse proxy, forward `X-Forwarded-Proto` (for a `Secure` cookie) and pass WebSocket upgrade headers to `/api/ws`.
