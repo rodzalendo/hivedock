@@ -44,7 +44,7 @@ describe("dockerRunToCompose", () => {
   it("declares a top-level named volume", () => {
     const { yaml } = dockerRunToCompose("docker run -v pgdata:/var/lib/postgresql/data postgres:16");
     expect(yaml).toContain("- pgdata:/var/lib/postgresql/data");
-    expect(yaml).toMatch(/\nvolumes:\n  pgdata:/);
+    expect(yaml).toMatch(/\nvolumes:\n {2}pgdata:/);
   });
 
   it("does not treat a bind mount as a named volume", () => {
@@ -62,7 +62,7 @@ describe("dockerRunToCompose", () => {
     const { yaml } = dockerRunToCompose("docker run --network proxy nginx");
     expect(yaml).toContain("    networks:");
     expect(yaml).toContain("      - proxy");
-    expect(yaml).toMatch(/\nnetworks:\n  proxy:\n    external: true/);
+    expect(yaml).toMatch(/\nnetworks:\n {2}proxy:\n {4}external: true/);
   });
 
   it("splits grouped short boolean flags (-it)", () => {

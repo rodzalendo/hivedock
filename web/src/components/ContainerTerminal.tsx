@@ -11,10 +11,12 @@ export default function ContainerTerminal({
   containerId,
   title,
   onClose,
+  host = "local",
 }: {
   containerId: string;
   title: string;
   onClose: () => void;
+  host?: string;
 }) {
   const holder = useRef<HTMLDivElement>(null);
 
@@ -33,8 +35,9 @@ export default function ContainerTerminal({
     term.open(el);
 
     const proto = location.protocol === "https:" ? "wss" : "ws";
+    const q = host && host !== "local" ? `?host=${encodeURIComponent(host)}` : "";
     const ws = new WebSocket(
-      `${proto}://${location.host}/api/containers/${encodeURIComponent(containerId)}/exec`,
+      `${proto}://${location.host}/api/containers/${encodeURIComponent(containerId)}/exec${q}`,
     );
     ws.binaryType = "arraybuffer";
 
@@ -81,9 +84,9 @@ export default function ContainerTerminal({
       ws.close();
       term.dispose();
     };
-    // containerId identifies the session; onClose is stable enough for one modal.
+    // containerId + host identify the session; onClose is stable for one modal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerId]);
+  }, [containerId, host]);
 
   return (
     <div

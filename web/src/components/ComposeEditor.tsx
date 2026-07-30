@@ -27,10 +27,16 @@ type Feedback =
 // editor. Validate runs `docker compose config` server-side; Save validates then
 // writes the file. Save ≠ deploy — the running stack is untouched (drift will
 // show until the user deploys from the Deploy tab).
-export default function ComposeEditor({ stack }: { stack: string }) {
+export default function ComposeEditor({
+  stack,
+  host = "local",
+}: {
+  stack: string;
+  host?: string;
+}) {
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["compose", stack],
-    queryFn: () => fetchCompose(stack),
+    queryKey: ["compose", host, stack],
+    queryFn: () => fetchCompose(stack, host),
     refetchOnWindowFocus: false,
   });
 
@@ -61,7 +67,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     setBusy(true);
     setFeedback({ kind: "none" });
     try {
-      const res: ValidateResult = await validateCompose(stack, text);
+      const res: ValidateResult = await validateCompose(stack, text, host);
       setFeedback(
         res.valid
           ? { kind: "valid", msg: "Valid compose file." }
@@ -80,7 +86,7 @@ export default function ComposeEditor({ stack }: { stack: string }) {
     setBusy(true);
     setFeedback({ kind: "none" });
     try {
-      const res = await saveCompose(stack, text, base);
+      const res = await saveCompose(stack, text, base, host);
       if (!res.ok) {
         setConflict(res.conflict);
         return;

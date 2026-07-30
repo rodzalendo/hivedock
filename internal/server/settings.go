@@ -26,7 +26,9 @@ type settingsResponse struct {
 	GitRemote     string `json:"gitRemote,omitempty"` // origin URL, when STACKS_DIR tracks one (drives "Pull from git")
 	GitBranch     string `json:"gitBranch,omitempty"`
 	GitCommit     string `json:"gitCommit,omitempty"`
-	APITokenSet   bool   `json:"apiTokenSet"` // whether a read-only API token exists (§6.5)
+	APITokenSet   bool   `json:"apiTokenSet"`   // whether a read-only API token exists (§6.5)
+	AgentTokenSet bool   `json:"agentTokenSet"` // whether agent enrollment is enabled (docs/MULTIHOST.md)
+	ManagerURL    string `json:"managerUrl"`    // suggested --manager URL for the enrollment command
 	Version       string `json:"version"`
 }
 
@@ -113,8 +115,29 @@ func (a *api) settings(w http.ResponseWriter, r *http.Request) {
 		GitBranch:     gitBranch,
 		GitCommit:     gitCommit,
 		APITokenSet:   a.apiTokenExists(),
+		AgentTokenSet: a.agentTokenConfigured(),
+		ManagerURL:    a.suggestedManagerURL(r),
 		Version:       version,
 	})
+}
+
+// suggestedManagerURL is the base URL an agent should dial to reach this manager,
+// for the copy-paste enrollment command: PUBLIC_HOST when configured, else the
+// request's own Host. The scheme follows the request (agents accept http/https or
+// ws/wss and default to TLS when omitted).
+func (a *api) suggestedManagerURL(r *http.Request) string {
+	host := a.cfg.PublicHost
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := "https"
+	if r.TLS == nil && r.Header.Get("X-Forwarded-Proto") != "https" {
+		scheme = "http"
+	}
+	return scheme + "://" + host
 }
 
 // gitPull fast-forwards STACKS_DIR from its git remote (pull-only GitOps). It is

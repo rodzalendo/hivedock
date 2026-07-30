@@ -8,6 +8,8 @@ import {
   gitPull,
   generateApiToken,
   revokeApiToken,
+  mintAgentToken,
+  revokeAgentToken,
   fetchRegistries,
   saveRegistry,
   deleteRegistry,
@@ -57,6 +59,11 @@ export default function Settings() {
         <div className="space-y-6">
           <RegistriesSection />
           <ApiTokenSection tokenSet={data.apiTokenSet} onChanged={refetch} />
+          <HostsSection
+            agentTokenSet={data.agentTokenSet}
+            managerUrl={data.managerUrl}
+            onChanged={refetch}
+          />
           <GitSection data={data} onSaved={refetch} />
           <PruneSection />
 
@@ -540,6 +547,121 @@ function ApiTokenSection({
           <span className="text-[11px] text-zinc-500">
             {tokenSet ? t("settings.token.active") : t("settings.token.none")}
           </span>
+        </div>
+      )}
+      {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}
+    </section>
+  );
+}
+
+// HostsSection enrolls a remote host for multi-host management (docs/MULTIHOST.md):
+// it mints a DB agent token (hashed, shown once) and shows the copy-paste
+// `docker run … hivedock agent …` command to run on that host. The agent dials
+// home over one outbound WebSocket; the host then appears in the Stacks switcher.
+function HostsSection({
+  agentTokenSet,
+  managerUrl,
+  onChanged,
+}: {
+  agentTokenSet: boolean;
+  managerUrl: string;
+  onChanged: () => void;
+}) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const [name, setName] = useState("homelab");
+  const [note, setNote] = useState<string | null>(null);
+
+  const manager = managerUrl || "https://your-manager.example.com";
+  const command = [
+    "docker run -d --name hivedock-agent --restart unless-stopped \\",
+    "  -v /var/run/docker.sock:/var/run/docker.sock \\",
+    "  -v /path/to/your/stacks:/stacks \\",
+    "  ghcr.io/rodzalendo/hivedock:latest \\",
+    `  agent --manager ${manager} --token ${token ?? "<token>"} --name ${name || "homelab"} --stacks-dir /stacks`,
+  ].join("\n");
+
+  async function onMint() {
+    setBusy(true);
+    setNote(null);
+    try {
+      setToken(await mintAgentToken());
+      onChanged();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : t("settings.token.failedGen"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRevoke() {
+    setBusy(true);
+    setNote(null);
+    setToken(null);
+    try {
+      await revokeAgentToken();
+      onChanged();
+      setNote(t("settings.hosts.revoked"));
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : t("settings.token.failedRevoke"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-zinc-200">
+        {t("settings.hosts")}
+        <HelpTip>{t("settings.hosts.help")}</HelpTip>
+      </h3>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={onMint}
+          disabled={busy}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800 disabled:opacity-50"
+        >
+          {agentTokenSet ? t("settings.hosts.regenerate") : t("settings.hosts.mint")}
+        </button>
+        {agentTokenSet && (
+          <button
+            onClick={onRevoke}
+            disabled={busy}
+            className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 transition hover:text-red-400 disabled:opacity-50"
+          >
+            {t("settings.hosts.revoke")}
+          </button>
+        )}
+        <span className="text-[11px] text-zinc-500">
+          {agentTokenSet ? t("settings.hosts.active") : t("settings.hosts.none")}
+        </span>
+      </div>
+
+      {token && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] text-amber-400">{t("settings.hosts.copyNow")}</p>
+          <label className="flex items-center gap-2 text-xs text-zinc-400">
+            {t("settings.hosts.nameLabel")}
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-40 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-accent-500"
+            />
+          </label>
+          <p className="text-xs text-zinc-500">{t("settings.hosts.runOn")}</p>
+          <div className="flex items-start gap-2">
+            <pre className="flex-1 overflow-auto rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-zinc-200">
+              {command}
+            </pre>
+            <button
+              onClick={() => void navigator.clipboard?.writeText(command)}
+              className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-200 transition hover:bg-zinc-800"
+            >
+              {t("settings.hosts.copyCmd")}
+            </button>
+          </div>
         </div>
       )}
       {note && <p className="mt-2 text-xs text-zinc-500">{note}</p>}

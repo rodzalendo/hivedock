@@ -19,6 +19,7 @@ import (
 	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
+	"github.com/rogalinski/hivedock/internal/hostops"
 	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/server"
 	"github.com/rogalinski/hivedock/internal/stacks"
@@ -181,8 +182,12 @@ func runAgent(args []string) int {
 	manager := fs.String("manager", os.Getenv("MANAGER_URL"), "manager base URL, e.g. https://hivedock.example.com (or MANAGER_URL)")
 	token := fs.String("token", os.Getenv("AGENT_TOKEN"), "shared token matching the manager's AGENT_TOKEN (or AGENT_TOKEN)")
 	name := fs.String("name", os.Getenv("AGENT_NAME"), "this host's name as shown in the manager (or AGENT_NAME)")
+	stacksDir := fs.String("stacks-dir", os.Getenv("STACKS_DIR"), "compose stacks root this agent manages (or STACKS_DIR)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *stacksDir == "" {
+		*stacksDir = "/stacks" // container default (bind-mount the host's stacks here)
 	}
 
 	dc, err := docker.New()
@@ -194,13 +199,23 @@ func runAgent(args []string) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Boot-time bind-parity check (§6.3): a bind-mismatched STACKS_DIR makes the
+	// agent refuse writes rather than corrupt stacks — the same guard the manager
+	// runs on its own host.
+	warnings, readOnly := hostops.SystemCheck(ctx, dc, *stacksDir, logger)
+	for _, w := range warnings {
+		logger.Warn("agent system check", "warning", w)
+	}
 	if err := agent.Run(ctx, agent.Options{
-		ManagerURL: *manager,
-		Token:      *token,
-		Name:       *name,
-		Version:    server.Version(),
-		Logger:     logger,
-		Docker:     dc,
+		ManagerURL:     *manager,
+		Token:          *token,
+		Name:           *name,
+		Version:        server.Version(),
+		Logger:         logger,
+		Docker:         dc,
+		StacksDir:      *stacksDir,
+		ReadOnlyReason: readOnly,
 	}); err != nil {
 		logger.Error("agent exited", "err", err)
 		return 1

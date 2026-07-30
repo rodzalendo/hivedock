@@ -52,15 +52,17 @@ async function copyText(text: string): Promise<boolean> {
 export default function LogsPanel({
   stack,
   services,
+  host = "local",
 }: {
   stack: string;
   services: string[];
+  host?: string;
 }) {
   const [follow, setFollow] = useState(true);
   const [serviceFilter, setServiceFilter] = useState<string>("all");
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const { lines, error, connected } = useLogs(stack, follow);
+  const { lines, error, connected } = useLogs(host, stack, follow);
 
   const colorFor = useMemo(() => {
     const map = new Map<string, string>();

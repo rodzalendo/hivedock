@@ -10,16 +10,18 @@ import (
 
 	"github.com/rogalinski/hivedock/internal/compose"
 	"github.com/rogalinski/hivedock/internal/events"
-	"github.com/rogalinski/hivedock/internal/stacks"
+	"github.com/rogalinski/hivedock/internal/hostops"
 )
 
 // runStackAction triggers a mutating compose operation (up/down/restart/pull/
-// stop) on a managed stack. The mutation is triggered here — over an
-// authenticated, CSRF-protected POST — and its output is streamed back over the
-// WebSocket as deploy:* messages. The operation runs on a background context so
-// a browser refresh (or WS drop) can't abort an in-flight deploy; the docker
-// daemon owns the containers regardless of this process's lifetime.
+// stop) on a managed stack — local or remote. The mutation is triggered here —
+// over an authenticated, CSRF-protected POST — and its output is streamed back
+// over the WebSocket as deploy:* messages, tagged with the host. The operation
+// runs on a background context so a browser refresh (or WS drop) can't abort an
+// in-flight deploy; the daemon on the owning host holds the containers regardless
+// of this process's lifetime.
 func (a *api) runStackAction(w http.ResponseWriter, r *http.Request) {
+	host := hostParam(r)
 	name := chi.URLParam(r, "name")
 	action := compose.Action(chi.URLParam(r, "action"))
 	if !action.Valid() {
@@ -27,45 +29,28 @@ func (a *api) runStackAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	st, ok, err := a.stacks.Get(r.Context(), name)
+	be, err := a.backendFor(host)
 	if err != nil {
-		a.logger.Error("deploy: get stack", "name", name, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to load stack: "+err.Error())
+		a.httpError(w, err)
 		return
 	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "stack not found: "+name)
-		return
-	}
-	// Only managed stacks (with a compose file under STACKS_DIR) are mutable;
-	// external stacks are read-only — the UI never lies about ownership.
-	if st.Origin != stacks.OriginManaged || st.ComposeFile == "" {
-		writeError(w, http.StatusConflict, "stack is external (read-only); no compose file to operate on")
+	// Reject a missing/external stack synchronously (before accepting the deploy).
+	if _, err := a.managedStack(r.Context(), be, name); err != nil {
+		a.httpError(w, err)
 		return
 	}
 
-	// Acquire the per-stack lock synchronously so we can 409 the caller if an
-	// operation is already running for this stack.
-	release, acquired := a.runner.Start(name)
+	release, acquired := a.runner.Start(lockKey(host, name))
 	if !acquired {
 		writeError(w, http.StatusConflict, "an operation is already running for this stack")
 		return
 	}
 
 	opID := newOpID()
-	op := compose.Op{
-		Stack:       name,
-		Action:      action,
-		ComposeFile: st.ComposeFile,
-		ProjectDir:  st.Dir,
-	}
-
-	go a.executeDeploy(op, opID, release)
+	go a.executeDeploy(host, be, name, string(action), "", opID, release)
 
 	writeJSON(w, http.StatusAccepted, map[string]string{
-		"id":     opID,
-		"stack":  name,
-		"action": string(action),
+		"id": opID, "host": host, "stack": name, "action": string(action),
 	})
 }
 
@@ -73,21 +58,18 @@ func (a *api) runStackAction(w http.ResponseWriter, r *http.Request) {
 // useful hammer when one container misbehaves. Output streams over the
 // WebSocket exactly like a stack-level action, under the same per-stack lock.
 func (a *api) restartService(w http.ResponseWriter, r *http.Request) {
+	host := hostParam(r)
 	name := chi.URLParam(r, "name")
 	service := chi.URLParam(r, "service")
 
-	st, ok, err := a.stacks.Get(r.Context(), name)
+	be, err := a.backendFor(host)
 	if err != nil {
-		a.logger.Error("restart service: get stack", "name", name, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to load stack: "+err.Error())
+		a.httpError(w, err)
 		return
 	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "stack not found: "+name)
-		return
-	}
-	if st.Origin != stacks.OriginManaged || st.ComposeFile == "" {
-		writeError(w, http.StatusConflict, "stack is external (read-only); no compose file to operate on")
+	st, err := a.managedStack(r.Context(), be, name)
+	if err != nil {
+		a.httpError(w, err)
 		return
 	}
 	found := false
@@ -102,58 +84,49 @@ func (a *api) restartService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	release, acquired := a.runner.Start(name)
+	release, acquired := a.runner.Start(lockKey(host, name))
 	if !acquired {
 		writeError(w, http.StatusConflict, "an operation is already running for this stack")
 		return
 	}
 
 	opID := newOpID()
-	op := compose.Op{
-		Stack:       name,
-		Action:      compose.ActionRestart,
-		ComposeFile: st.ComposeFile,
-		ProjectDir:  st.Dir,
-		Service:     service,
-	}
-
-	go a.executeDeploy(op, opID, release)
+	go a.executeDeploy(host, be, name, string(compose.ActionRestart), service, opID, release)
 
 	writeJSON(w, http.StatusAccepted, map[string]string{
-		"id":      opID,
-		"stack":   name,
-		"action":  string(compose.ActionRestart),
-		"service": service,
+		"id": opID, "host": host, "stack": name, "action": string(compose.ActionRestart), "service": service,
 	})
 }
 
-// executeDeploy runs the operation and broadcasts start/line/end over the hub.
-func (a *api) executeDeploy(op compose.Op, opID string, release func()) {
+// executeDeploy runs the operation via the host's backend and broadcasts
+// start/line/end over the hub, tagged with host so the browser can attribute
+// output to the right host's stack. Runs on a manager-lifetime context.
+func (a *api) executeDeploy(host string, be hostops.Backend, name, action, service, opID string, release func()) {
 	defer release()
 
 	a.hub.Publish(events.Message{Type: "deploy:start", Payload: map[string]string{
-		"id": opID, "stack": op.Stack, "action": string(op.Action), "service": op.Service,
+		"id": opID, "host": host, "stack": name, "action": action, "service": service,
 	}})
-	a.logger.Info("deploy start", "stack", op.Stack, "action", op.Action, "id", opID)
+	a.logger.Info("deploy start", "host", host, "stack", name, "action", action, "id", opID)
 
-	err := a.runner.Exec(context.Background(), op, func(line string) {
+	err := be.RunAction(context.Background(), name, action, service, func(line string) {
 		a.hub.Publish(events.Message{Type: "deploy:line", Payload: map[string]string{
-			"id": opID, "stack": op.Stack, "line": line,
+			"id": opID, "host": host, "stack": name, "line": line,
 		}})
 	})
 
-	end := map[string]any{"id": opID, "stack": op.Stack, "action": string(op.Action), "service": op.Service, "ok": err == nil}
+	end := map[string]any{"id": opID, "host": host, "stack": name, "action": action, "service": service, "ok": err == nil}
 	if err != nil {
 		end["error"] = err.Error()
-		a.logger.Warn("deploy failed", "stack", op.Stack, "action", op.Action, "id", opID, "err", err)
+		a.logger.Warn("deploy failed", "host", host, "stack", name, "action", action, "id", opID, "err", err)
 	} else {
-		a.logger.Info("deploy ok", "stack", op.Stack, "action", op.Action, "id", opID)
+		a.logger.Info("deploy ok", "host", host, "stack", name, "action", action, "id", opID)
 	}
 	a.hub.Publish(events.Message{Type: "deploy:end", Payload: end})
 
 	// The operation changed container state; nudge clients to refetch the truth
 	// model (docker events usually cover this, but not for pull/no-op cases).
-	a.hub.NotifyChanged("deploy:" + string(op.Action))
+	a.hub.NotifyChanged("deploy:" + action)
 }
 
 // newOpID returns a short random hex id used to correlate deploy:* messages.

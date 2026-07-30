@@ -184,17 +184,19 @@ func (s *wsSession) dispatch(ctx context.Context, cmd clientCommand) {
 	switch cmd.Type {
 	case "logs:subscribe":
 		var p struct {
+			Host  string `json:"host"`
 			Stack string `json:"stack"`
 			Tail  int    `json:"tail"`
 		}
 		_ = json.Unmarshal(cmd.Payload, &p)
-		s.startLogs(ctx, p.Stack, p.Tail)
+		s.startLogs(ctx, p.Host, p.Stack, p.Tail)
 	case "logs:unsubscribe":
 		var p struct {
+			Host  string `json:"host"`
 			Stack string `json:"stack"`
 		}
 		_ = json.Unmarshal(cmd.Payload, &p)
-		s.stopLogs(p.Stack)
+		s.stopLogs(p.Host, p.Stack)
 	}
 }
 

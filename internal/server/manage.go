@@ -2,16 +2,10 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-
-	"github.com/rogalinski/hivedock/internal/compose"
-	"github.com/rogalinski/hivedock/internal/stacks"
 )
 
 // deleteStack removes a managed stack: it tears down its containers first (so
@@ -21,66 +15,29 @@ import (
 // destructive — the compose file and everything in the stack's directory is
 // removed.
 func (a *api) deleteStack(w http.ResponseWriter, r *http.Request) {
+	host := hostParam(r)
 	name := chi.URLParam(r, "name")
 	withVolumes := r.URL.Query().Get("volumes") == "true"
 
-	st, ok, err := a.stacks.Get(r.Context(), name)
+	be, err := a.backendFor(host)
 	if err != nil {
-		a.logger.Error("delete stack: get", "name", name, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to load stack: "+err.Error())
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "stack not found: "+name)
-		return
-	}
-	if st.Origin != stacks.OriginManaged || st.Dir == "" {
-		writeError(w, http.StatusConflict, "stack is external (read-only); nothing to delete under the stacks directory")
+		a.httpError(w, err)
 		return
 	}
 
-	dir, err := a.childOfStacksDir(st.Dir)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	// Serialize with any in-flight deploy for this stack.
-	release, acquired := a.runner.Start(name)
+	// Serialize with any in-flight deploy for this stack (same named lock).
+	release, acquired := a.runner.Start(lockKey(host, name))
 	if !acquired {
 		writeError(w, http.StatusConflict, "an operation is already running for this stack")
 		return
 	}
 	defer release()
 
-	// Tear the stack down before deleting the compose file. This must run for
-	// *stopped* containers too, not just running ones: a stopped container keeps
-	// its com.docker.compose.project label, so removing the directory without a
-	// `down` leaves containers the scanner then reclassifies as an external
-	// stack (no compose file on disk = external) — undeletable, since external
-	// stacks are read-only. `down` is a cheap no-op when nothing exists.
-	if hasContainers(st) && st.ComposeFile != "" {
-		op := compose.Op{
-			Stack:       name,
-			Action:      compose.ActionDown,
-			ComposeFile: st.ComposeFile,
-			ProjectDir:  st.Dir,
-			Volumes:     withVolumes,
-		}
-		if err := a.runner.Exec(r.Context(), op, func(string) {}); err != nil {
-			a.logger.Warn("delete stack: down failed", "name", name, "err", err)
-			writeError(w, http.StatusInternalServerError, "failed to tear down the stack before deleting (stop it first, then retry): "+err.Error())
-			return
-		}
-	}
-
-	if err := os.RemoveAll(dir); err != nil {
-		a.logger.Error("delete stack: remove dir", "dir", dir, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to remove stack directory: "+err.Error())
+	if err := be.DeleteStack(r.Context(), name, withVolumes); err != nil {
+		a.httpError(w, err)
 		return
 	}
-
-	a.logger.Info("stack deleted", "name", name, "dir", dir)
+	a.logger.Info("stack deleted", "host", host, "name", name)
 	a.hub.NotifyChanged("stack:deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -90,6 +47,7 @@ func (a *api) deleteStack(w http.ResponseWriter, r *http.Request) {
 // would change its compose project name and orphan the live containers, so a
 // running stack is rejected with a 409.
 func (a *api) renameStack(w http.ResponseWriter, r *http.Request) {
+	host := hostParam(r)
 	name := chi.URLParam(r, "name")
 	var body struct {
 		NewName string `json:"newName"`
@@ -99,115 +57,32 @@ func (a *api) renameStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	newName := strings.TrimSpace(body.NewName)
-	if !stackNamePattern.MatchString(newName) {
-		writeError(w, http.StatusBadRequest, invalidStackName)
-		return
-	}
 	if newName == name {
 		writeError(w, http.StatusBadRequest, "new name is the same as the current name")
 		return
 	}
 
-	st, ok, err := a.stacks.Get(r.Context(), name)
+	be, err := a.backendFor(host)
 	if err != nil {
-		a.logger.Error("rename stack: get", "name", name, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to load stack: "+err.Error())
+		a.httpError(w, err)
 		return
 	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "stack not found: "+name)
-		return
-	}
-	if st.Origin != stacks.OriginManaged || st.Dir == "" {
-		writeError(w, http.StatusConflict, "stack is external (read-only); can't rename")
-		return
-	}
-	if hasRunning(st) {
-		writeError(w, http.StatusConflict, "stop the stack before renaming (a running stack's project name can't change without orphaning its containers)")
-		return
-	}
-
-	oldDir, err := a.childOfStacksDir(st.Dir)
+	ref, err := be.RenameStack(r.Context(), name, newName)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	root := filepath.Dir(oldDir)
-	newDir := filepath.Join(root, newName)
-	if filepath.Dir(newDir) != root {
-		writeError(w, http.StatusBadRequest, "invalid stack name")
-		return
-	}
-	if _, err := os.Stat(newDir); err == nil {
-		writeError(w, http.StatusConflict, "a stack named "+newName+" already exists")
-		return
-	} else if !os.IsNotExist(err) {
-		writeError(w, http.StatusInternalServerError, "failed to check target directory")
+		a.httpError(w, err)
 		return
 	}
 
-	if err := os.Rename(oldDir, newDir); err != nil {
-		a.logger.Error("rename stack: rename dir", "from", oldDir, "to", newDir, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to rename stack directory: "+err.Error())
-		return
-	}
-
-	// Carry the visibility/icon prefs over to the new stack name.
-	if a.db != nil {
+	// Carry the visibility/icon prefs over to the new name. Prefs live in the
+	// manager's DB and are keyed by stack name only (Home is local-scoped), so
+	// this applies to the local host.
+	if host == "local" && a.db != nil {
 		if err := a.db.RenameStackPrefs(name, newName); err != nil {
 			a.logger.Warn("rename stack: move prefs", "from", name, "to", newName, "err", err)
 		}
 	}
 
-	composeFile := ""
-	if st.ComposeFile != "" {
-		composeFile = filepath.Join(newDir, filepath.Base(st.ComposeFile))
-	}
-	a.logger.Info("stack renamed", "from", name, "to", newName, "dir", newDir)
+	a.logger.Info("stack renamed", "host", host, "from", name, "to", newName, "dir", ref.Dir)
 	a.hub.NotifyChanged("stack:renamed")
-	writeJSON(w, http.StatusOK, createStackResponse{Name: newName, Dir: newDir, ComposeFile: composeFile})
-}
-
-// childOfStacksDir validates that dir is a direct child of STACKS_DIR — with
-// symlinks resolved on both sides (§4.2), so a symlinked stack directory can't
-// point the rename/delete at a path outside the tree — and returns its real
-// absolute path. Defense in depth against path escapes.
-func (a *api) childOfStacksDir(dir string) (string, error) {
-	root, err := filepath.EvalSymlinks(a.cfg.StacksDir)
-	if err != nil {
-		if root, err = filepath.Abs(a.cfg.StacksDir); err != nil {
-			return "", err
-		}
-	}
-	abs, err := stacks.Contained(a.cfg.StacksDir, dir)
-	if err != nil {
-		return "", err
-	}
-	if abs == root || filepath.Dir(abs) != root {
-		return "", fmt.Errorf("refusing to operate on %q: not a stack under the stacks directory", dir)
-	}
-	return abs, nil
-}
-
-// hasContainers reports whether the daemon still knows about any container for
-// this stack, running or not. "absent" is the state the model uses for a
-// compose-defined service with no container at all; anything else (running,
-// exited, created, paused) is a real container that a teardown must remove.
-func hasContainers(st stacks.Stack) bool {
-	for _, svc := range st.Services {
-		if svc.State != "absent" {
-			return true
-		}
-	}
-	return false
-}
-
-// hasRunning reports whether any of a stack's services has a running container.
-func hasRunning(st stacks.Stack) bool {
-	for _, svc := range st.Services {
-		if svc.State == "running" {
-			return true
-		}
-	}
-	return false
+	writeJSON(w, http.StatusOK, ref)
 }

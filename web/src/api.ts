@@ -99,6 +99,15 @@ async function mutate(
   return res;
 }
 
+// stacksBase builds the stack-route prefix for a host: the unscoped /api/stacks
+// for the local host (or omitted host), else the host-scoped mirror
+// /api/hosts/{host}/stacks — the same handlers on the server (docs/MULTIHOST.md).
+function stacksBase(host?: string): string {
+  return host && host !== "local"
+    ? `/api/hosts/${encodeURIComponent(host)}/stacks`
+    : "/api/stacks";
+}
+
 export interface HostStats {
   available: boolean;
   cpuPercent: number;
@@ -278,9 +287,10 @@ export interface DeployAck {
 export async function runStackAction(
   name: string,
   action: StackAction,
+  host?: string,
 ): Promise<DeployAck> {
   const res = await mutate(
-    `/api/stacks/${encodeURIComponent(name)}/actions/${action}`,
+    `${stacksBase(host)}/${encodeURIComponent(name)}/actions/${action}`,
     "POST",
   );
   return (await res.json()) as DeployAck;
@@ -291,9 +301,10 @@ export async function runStackAction(
 export async function restartService(
   stack: string,
   service: string,
+  host?: string,
 ): Promise<DeployAck> {
   const res = await mutate(
-    `/api/stacks/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/restart`,
+    `${stacksBase(host)}/${encodeURIComponent(stack)}/services/${encodeURIComponent(service)}/restart`,
     "POST",
   );
   return (await res.json()) as DeployAck;
@@ -314,18 +325,23 @@ export interface CreatedStack {
 export async function createStack(
   name: string,
   compose?: string,
+  host?: string,
 ): Promise<CreatedStack> {
   const body = compose ? { name, compose } : { name };
-  const res = await mutate("/api/stacks", "POST", body);
+  const res = await mutate(stacksBase(host), "POST", body);
   return (await res.json()) as CreatedStack;
 }
 
 // deleteStack tears down the stack's containers (running or stopped), then
 // removes its directory under STACKS_DIR. With volumes=true it also deletes the
 // stack's named volumes, destroying application data. Irreversible either way.
-export async function deleteStack(name: string, volumes = false): Promise<void> {
+export async function deleteStack(
+  name: string,
+  volumes = false,
+  host?: string,
+): Promise<void> {
   const query = volumes ? "?volumes=true" : "";
-  await mutate(`/api/stacks/${encodeURIComponent(name)}${query}`, "DELETE");
+  await mutate(`${stacksBase(host)}/${encodeURIComponent(name)}${query}`, "DELETE");
 }
 
 // renameStack renames a managed stack's directory. The stack must be stopped
@@ -333,9 +349,10 @@ export async function deleteStack(name: string, volumes = false): Promise<void> 
 export async function renameStack(
   name: string,
   newName: string,
+  host?: string,
 ): Promise<CreatedStack> {
   const res = await mutate(
-    `/api/stacks/${encodeURIComponent(name)}/rename`,
+    `${stacksBase(host)}/${encodeURIComponent(name)}/rename`,
     "POST",
     { newName },
   );
@@ -401,8 +418,8 @@ async function saveWithLock<T>(
   return { ok: true, file: (await res.json()) as T };
 }
 
-export const fetchCompose = (name: string) =>
-  getJSON<ComposeFile>(`/api/stacks/${encodeURIComponent(name)}/compose`);
+export const fetchCompose = (name: string, host?: string) =>
+  getJSON<ComposeFile>(`${stacksBase(host)}/${encodeURIComponent(name)}/compose`);
 
 // validateCompose asks the server to run `docker compose config` on the draft
 // without saving it. Always resolves (valid true/false); rejects only on a
@@ -410,9 +427,10 @@ export const fetchCompose = (name: string) =>
 export async function validateCompose(
   name: string,
   content: string,
+  host?: string,
 ): Promise<ValidateResult> {
   const res = await mutate(
-    `/api/stacks/${encodeURIComponent(name)}/compose/validate`,
+    `${stacksBase(host)}/${encodeURIComponent(name)}/compose/validate`,
     "POST",
     { content },
   );
@@ -422,9 +440,14 @@ export async function validateCompose(
 // saveCompose validates server-side then writes the file (save ≠ deploy). A
 // 422 (invalid compose) surfaces as a thrown Error carrying compose's message;
 // a 409 (file changed on disk) returns a SaveConflict to reconcile.
-export const saveCompose = (name: string, content: string, baseSha256: string) =>
+export const saveCompose = (
+  name: string,
+  content: string,
+  baseSha256: string,
+  host?: string,
+) =>
   saveWithLock<ComposeFile>(
-    `/api/stacks/${encodeURIComponent(name)}/compose`,
+    `${stacksBase(host)}/${encodeURIComponent(name)}/compose`,
     content,
     baseSha256,
   );
@@ -550,14 +573,19 @@ export interface EnvFile {
   sha256: string; // hash of content when loaded; echoed on save (optimistic lock)
 }
 
-export const fetchEnv = (name: string) =>
-  getJSON<EnvFile>(`/api/stacks/${encodeURIComponent(name)}/env`);
+export const fetchEnv = (name: string, host?: string) =>
+  getJSON<EnvFile>(`${stacksBase(host)}/${encodeURIComponent(name)}/env`);
 
 // saveEnv writes the stack's .env (creating it if needed). Save ≠ deploy. A 409
 // (file changed on disk) returns a SaveConflict to reconcile.
-export const saveEnv = (name: string, content: string, baseSha256: string) =>
+export const saveEnv = (
+  name: string,
+  content: string,
+  baseSha256: string,
+  host?: string,
+) =>
   saveWithLock<EnvFile>(
-    `/api/stacks/${encodeURIComponent(name)}/env`,
+    `${stacksBase(host)}/${encodeURIComponent(name)}/env`,
     content,
     baseSha256,
   );
@@ -579,6 +607,8 @@ export interface Settings {
   gitBranch?: string;
   gitCommit?: string;
   apiTokenSet: boolean; // whether a read-only API token exists (§6.5)
+  agentTokenSet: boolean; // whether agent enrollment is enabled (docs/MULTIHOST.md)
+  managerUrl: string; // suggested --manager URL for the enrollment command
   version: string;
 }
 
@@ -680,7 +710,19 @@ export const fetchAppUpdate = () => getJSON<AppUpdate>("/api/app/update");
 export async function selfUpdate(): Promise<void> {
   await mutate("/api/app/update", "POST");
 }
-export const fetchStacks = () => getJSON<Stack[]>("/api/stacks");
-export const fetchStack = (name: string) =>
-  getJSON<Stack>(`/api/stacks/${encodeURIComponent(name)}`);
+export const fetchStacks = (host?: string) =>
+  getJSON<Stack[]>(stacksBase(host));
+export const fetchStack = (name: string, host?: string) =>
+  getJSON<Stack>(`${stacksBase(host)}/${encodeURIComponent(name)}`);
+
+// mintAgentToken / revokeAgentTokenReq manage the DB agent-enrollment token used
+// to add a remote host from the UI (docs/MULTIHOST.md). The plaintext is returned
+// once and never retrievable again.
+export async function mintAgentToken(): Promise<string> {
+  const res = await mutate("/api/settings/agent-token", "POST");
+  return ((await res.json()) as { token: string }).token;
+}
+export async function revokeAgentToken(): Promise<void> {
+  await mutate("/api/settings/agent-token", "DELETE");
+}
 export const fetchHostStats = () => getJSON<HostStats>("/api/host/stats");

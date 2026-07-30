@@ -25,6 +25,7 @@ var (
 	ErrRunning     = errors.New("stop the stack first (it still has containers)")
 	ErrEscape      = errors.New("refusing to access a path outside the stacks directory")
 	ErrNoDocker    = errors.New("docker is unavailable on this host")
+	ErrOffline     = errors.New("host is offline")
 )
 
 // ConflictError is the optimistic-lock failure: the file changed on disk since it
@@ -95,6 +96,8 @@ func CodeFor(err error) string {
 		return CodeEscape
 	case errors.Is(err, ErrNoDocker):
 		return CodeNoDocker
+	case errors.Is(err, ErrOffline):
+		return CodeOffline
 	case errors.Is(err, compose.ErrEnvManaged):
 		return CodeEnvManaged
 	case errors.Is(err, compose.ErrDigestPinned):
@@ -145,6 +148,8 @@ func ErrorForCode(code, text string, data json.RawMessage) error {
 		return ErrEscape
 	case CodeNoDocker:
 		return ErrNoDocker
+	case CodeOffline:
+		return ErrOffline
 	case CodeEnvManaged:
 		return compose.ErrEnvManaged
 	case CodeDigestPinned:

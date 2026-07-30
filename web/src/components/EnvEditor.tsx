@@ -16,10 +16,16 @@ type Feedback =
 // EnvEditor edits a managed stack's .env file (plain KEY=VALUE, interpolated by
 // compose at deploy time). No `docker compose config` validation is needed here.
 // Save ≠ deploy — the caller deploys from the Deploy tab to apply.
-export default function EnvEditor({ stack }: { stack: string }) {
+export default function EnvEditor({
+  stack,
+  host = "local",
+}: {
+  stack: string;
+  host?: string;
+}) {
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["env", stack],
-    queryFn: () => fetchEnv(stack),
+    queryKey: ["env", host, stack],
+    queryFn: () => fetchEnv(stack, host),
     refetchOnWindowFocus: false,
   });
 
@@ -48,7 +54,7 @@ export default function EnvEditor({ stack }: { stack: string }) {
     setBusy(true);
     setFeedback({ kind: "none" });
     try {
-      const res = await saveEnv(stack, text, base);
+      const res = await saveEnv(stack, text, base, host);
       if (!res.ok) {
         setConflict(res.conflict);
         return;

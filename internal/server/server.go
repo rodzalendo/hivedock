@@ -21,6 +21,7 @@ import (
 	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/docker"
 	"github.com/rogalinski/hivedock/internal/events"
+	"github.com/rogalinski/hivedock/internal/hostops"
 	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/registry"
 	"github.com/rogalinski/hivedock/internal/stacks"
@@ -77,6 +78,11 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 		selfReg: regClient,         // resolves the candidate release digest to verify
 		hosts:   newHostRegistry(), // multi-host: connected remote agents (docs/MULTIHOST.md)
 	}
+	// The local host's stack-management backend: the portable hostops core over
+	// this manager's STACKS_DIR + docker socket + git auto-commit. Remote hosts get
+	// a remoteBackend over the agent RPC; both satisfy hostops.Backend so the stack
+	// handlers are host-agnostic (docs/MULTIHOST.md).
+	api.local = hostops.NewLocal(cfg.StacksDir, stacksSvc, api.runner, dockerClient, api.gitAutoCommitEnabled, logger)
 
 	// First-run: bootstrap the admin from env, or mint a one-time setup token.
 	api.initFirstRun()
@@ -117,20 +123,31 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Get("/ws", api.websocket)
 			r.Get("/containers/{id}/exec", api.containerExec)
 			r.Get("/hosts", api.listHosts)
-			r.Get("/hosts/{name}/containers", api.hostContainers)
-			r.Get("/stacks", api.listStacks)
-			r.Post("/stacks", api.createStack)
-			r.Get("/stacks/{name}", api.getStack)
-			r.Delete("/stacks/{name}", api.deleteStack)
-			r.Post("/stacks/{name}/rename", api.renameStack)
-			r.Post("/stacks/{name}/actions/{action}", api.runStackAction)
-			r.Post("/stacks/{name}/services/{service}/restart", api.restartService)
-			r.Post("/stacks/{name}/services/{service}/update", api.updateService)
-			r.Get("/stacks/{name}/compose", api.getCompose)
-			r.Put("/stacks/{name}/compose", api.putCompose)
-			r.Post("/stacks/{name}/compose/validate", api.validateCompose)
-			r.Get("/stacks/{name}/env", api.getEnv)
-			r.Put("/stacks/{name}/env", api.putEnv)
+			// The stack-management surface. The same handlers serve the unscoped
+			// /stacks/… routes (implicit host "local") and the host-scoped mirror
+			// /hosts/{host}/stacks/… — each handler reads hostParam(r) and resolves
+			// a backend, so local and remote go through identical code
+			// (docs/MULTIHOST.md).
+			mountStacks := func(r chi.Router) {
+				r.Get("/stacks", api.listStacks)
+				r.Post("/stacks", api.createStack)
+				r.Get("/stacks/{name}", api.getStack)
+				r.Delete("/stacks/{name}", api.deleteStack)
+				r.Post("/stacks/{name}/rename", api.renameStack)
+				r.Post("/stacks/{name}/actions/{action}", api.runStackAction)
+				r.Post("/stacks/{name}/services/{service}/restart", api.restartService)
+				r.Post("/stacks/{name}/services/{service}/update", api.updateService)
+				r.Get("/stacks/{name}/compose", api.getCompose)
+				r.Put("/stacks/{name}/compose", api.putCompose)
+				r.Post("/stacks/{name}/compose/validate", api.validateCompose)
+				r.Get("/stacks/{name}/env", api.getEnv)
+				r.Put("/stacks/{name}/env", api.putEnv)
+			}
+			r.Route("/hosts/{host}", func(r chi.Router) {
+				r.Get("/containers", api.hostContainers)
+				mountStacks(r)
+			})
+			mountStacks(r)
 			r.Get("/host/stats", api.hostStats)
 			r.Post("/system/prune", api.prune)
 			r.Get("/settings", api.settings)
@@ -139,6 +156,8 @@ func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *
 			r.Post("/settings/git-pull", api.gitPull)
 			r.Post("/settings/api-token", api.generateAPIToken)
 			r.Delete("/settings/api-token", api.revokeAPIToken)
+			r.Post("/settings/agent-token", api.generateAgentToken)
+			r.Delete("/settings/agent-token", api.revokeAgentToken)
 			r.Get("/settings/registries", api.listRegistries)
 			r.Put("/settings/registries", api.putRegistry)
 			r.Delete("/settings/registries", api.deleteRegistry)
@@ -177,11 +196,12 @@ type api struct {
 	icons   *discovery.IconResolver
 	runner  *compose.Runner
 	checker *updates.Checker
-	verify  imageVerifier // §3.2 cosign signature verification (execs bundled cosign)
-	selfReg selfRegistry  // resolves the candidate release digest to verify/deploy
-	mux     http.Handler  // the built router (returned by New)
-	login   *loginLimiter // brute-force damper for login/setup
-	hosts   *hostRegistry // multi-host: connected remote agents (docs/MULTIHOST.md)
+	verify  imageVerifier         // §3.2 cosign signature verification (execs bundled cosign)
+	selfReg selfRegistry          // resolves the candidate release digest to verify/deploy
+	mux     http.Handler          // the built router (returned by New)
+	login   *loginLimiter         // brute-force damper for login/setup
+	hosts   *hostRegistry         // multi-host: connected remote agents (docs/MULTIHOST.md)
+	local   *hostops.LocalBackend // the local host's stack-management backend (docs/MULTIHOST.md)
 
 	checking     atomic.Bool // guards against concurrent update-check runs
 	selfUpdating atomic.Bool // guards against concurrent self-updates

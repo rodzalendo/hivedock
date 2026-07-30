@@ -1,4 +1,4 @@
-package server
+package hostops
 
 import (
 	"reflect"
@@ -50,8 +50,8 @@ func TestSanitizeLogLine(t *testing.T) {
 		"unicode ✓ café":               "unicode ✓ café", // multibyte preserved
 	}
 	for in, want := range cases {
-		if got := sanitizeLogLine(in); got != want {
-			t.Errorf("sanitizeLogLine(%q) = %q, want %q", in, got, want)
+		if got := SanitizeLogLine(in); got != want {
+			t.Errorf("SanitizeLogLine(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

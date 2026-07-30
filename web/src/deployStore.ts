@@ -24,12 +24,19 @@ export interface DeployState {
 interface DeployMessage {
   type: string;
   payload: {
+    host?: string;
     stack?: string;
     action?: string;
     line?: string;
     ok?: boolean;
     error?: string;
   };
+}
+
+// Operations are keyed by host + stack so a same-named stack on two hosts never
+// shares deploy state (docs/MULTIHOST.md). "local" is the implicit default.
+function keyOf(host: string | undefined, stack: string): string {
+  return `${host || "local"}/${stack}`;
 }
 
 // A frozen shared instance so getSnapshot returns a stable reference for every
@@ -53,16 +60,16 @@ function emit() {
   for (const l of listeners) l();
 }
 
-function update(stack: string, next: Partial<DeployState>) {
-  const prev = states.get(stack) ?? IDLE;
-  states.set(stack, { ...prev, ...next });
+function update(key: string, next: Partial<DeployState>) {
+  const prev = states.get(key) ?? IDLE;
+  states.set(key, { ...prev, ...next });
   emit();
 }
 
-function appendLine(stack: string, line: string) {
-  const prev = states.get(stack) ?? IDLE;
+function appendLine(key: string, line: string) {
+  const prev = states.get(key) ?? IDLE;
   const lines = [...prev.lines, line];
-  states.set(stack, {
+  states.set(key, {
     ...prev,
     lines: lines.length > MAX_LINES ? lines.slice(-MAX_LINES) : lines,
   });
@@ -76,9 +83,10 @@ window.addEventListener("hivedock:deploy", (ev: Event) => {
   const msg = (ev as CustomEvent<DeployMessage>).detail;
   const stack = msg?.payload?.stack;
   if (!stack) return;
+  const key = keyOf(msg.payload.host, stack);
   switch (msg.type) {
     case "deploy:start":
-      states.set(stack, {
+      states.set(key, {
         phase: "running",
         action: (msg.payload.action as StackAction) ?? null,
         lines: [],
@@ -87,10 +95,10 @@ window.addEventListener("hivedock:deploy", (ev: Event) => {
       emit();
       break;
     case "deploy:line":
-      if (msg.payload.line !== undefined) appendLine(stack, msg.payload.line);
+      if (msg.payload.line !== undefined) appendLine(key, msg.payload.line);
       break;
     case "deploy:end":
-      update(stack, {
+      update(key, {
         phase: msg.payload.ok ? "ok" : "error",
         error: msg.payload.ok ? null : (msg.payload.error ?? "operation failed"),
       });
@@ -100,27 +108,27 @@ window.addEventListener("hivedock:deploy", (ev: Event) => {
 
 // markStarted flips a stack to running the moment the user clicks, before the
 // server's deploy:start arrives, so the buttons disable without a round-trip.
-export function markStarted(stack: string, action: StackAction) {
-  states.set(stack, { phase: "running", action, lines: [], error: null });
+export function markStarted(host: string, stack: string, action: StackAction) {
+  states.set(keyOf(host, stack), { phase: "running", action, lines: [], error: null });
   emit();
 }
 
 // markFailed records a failure to *launch* the operation (the POST itself
 // failed) — no deploy:end will ever arrive for it.
-export function markFailed(stack: string, error: string) {
-  update(stack, { phase: "error", error });
+export function markFailed(host: string, stack: string, error: string) {
+  update(keyOf(host, stack), { phase: "error", error });
 }
 
-export function getDeployState(stack: string): DeployState {
-  return states.get(stack) ?? IDLE;
+export function getDeployState(host: string, stack: string): DeployState {
+  return states.get(keyOf(host, stack)) ?? IDLE;
 }
 
-// isAnyRunning reports whether any stack has an operation in flight, so the UI
-// can show that work continues while the user is on another page.
+// runningStacks reports the host/stack keys with an operation in flight, so the
+// UI can show that work continues while the user is on another page.
 export function runningStacks(): string[] {
   const out: string[] = [];
-  for (const [stack, st] of states) {
-    if (st.phase === "running") out.push(stack);
+  for (const [key, st] of states) {
+    if (st.phase === "running") out.push(key);
   }
   return out;
 }
@@ -130,11 +138,11 @@ function subscribe(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
-// useDeployState subscribes a component to one stack's operation state.
-export function useDeployState(stack: string): DeployState {
+// useDeployState subscribes a component to one host/stack's operation state.
+export function useDeployState(host: string, stack: string): DeployState {
   return useSyncExternalStore(
     subscribe,
-    () => getDeployState(stack),
+    () => getDeployState(host, stack),
     () => IDLE,
   );
 }

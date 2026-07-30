@@ -56,46 +56,84 @@ the matching reply (bounded by a timeout). Writes are serialized (gorilla
 requires a single writer). A dropped socket removes the host from the registry;
 the agent reconnects with backoff.
 
+**Streaming (Phase 2).** Deploy output, log follow, and the exec shell are streams,
+so the same envelope carries a `Kind` (`"stream"` = an intermediate chunk; empty =
+the terminal frame) and a machine `Code` on failure (so a remote error maps to the
+same HTTP status as a local one — a 409 conflict even carries the current bytes for
+the editor's reconcile flow). `CallStream` returns a channel of frames; a `cancel`
+control frame (client disconnect / logs-unsubscribe) stops the agent's work, and
+`execInput` / `execResize` frames tunnel the interactive shell over the same socket.
+On a socket drop the manager drains every in-flight call with a synthetic
+`offline` terminal, so remote deploys/logs unblock immediately.
+
 ## Security
 
 The manager↔agent channel is a **trust boundary**: the manager asks the agent to
 act on its Docker host. It is gated by:
 
-- **A shared bearer token** (`AGENT_TOKEN` on the manager; `--token` on the
-  agent), compared in constant time. No token set ⇒ the connect endpoint is
-  disabled entirely (multi-host is opt-in). Rotate by changing both ends.
+- **A bearer token**, compared in constant time. Two ways to set it, either
+  accepted: the env `AGENT_TOKEN` on the manager, or a token **minted in the UI**
+  (Settings → Hosts), which is hashed in the DB and shown once — the agent carries
+  it as `--token`. No token configured ⇒ the connect endpoint is disabled entirely
+  (multi-host is opt-in). Rotate by regenerating (UI) or changing both ends (env).
 - **TLS in production.** The agent dials `wss://` so the token and traffic are
   encrypted; the manager should sit behind the same HTTPS it already recommends.
-- **Least privilege, phased.** Phase 1 (below) is **read-only** — the agent only
-  answers list/inspect calls, so a compromised manager token cannot mutate a
-  remote host. Write methods (deploy, restart, exec) arrive in Phase 2 and are
-  gated identically, honor the agent's own read-only mode, and are logged on the
-  agent side too.
+- **The same security invariants run on the file-owning host.** Path confinement,
+  the optimistic lock, the stack-name allowlist, and read-only mode all run on the
+  host that owns the files — the agent for a remote stack — because both ends link
+  the identical `internal/hostops` core. A bind-mismatched agent (`STACKS_DIR`
+  parity check, §6.3) refuses writes independently, and every remote op is logged
+  on both ends.
 - **Outbound-only + no socket exposure**, as above — the remote host opens no
   ports and never speaks raw Docker to the network.
 
-Per-agent tokens, an enrollment/approval step (an agent appears as "pending"
-until the admin approves it), and mTLS are natural hardening follow-ons; the
-single shared token is the simple, safe starting point.
+Per-agent tokens with an approve-pending-agents flow and mTLS are natural
+hardening follow-ons; the shared/minted token is the simple, safe starting point.
+
+## Enrolling a host
+
+1. On the manager, open **Settings → Hosts** and click **Add a host**. This mints
+   an agent token (shown once) and displays a ready-to-run command. (Or set the
+   env `AGENT_TOKEN` on the manager instead — both are accepted.)
+2. On the host you want to add, run the shown command:
+
+   ```
+   docker run -d --name hivedock-agent --restart unless-stopped \
+     -v /var/run/docker.sock:/var/run/docker.sock \
+     -v /path/to/your/stacks:/stacks \
+     ghcr.io/rodzalendo/hivedock:latest \
+     agent --manager https://your-manager.example.com \
+           --token <token> --name homelab --stacks-dir /stacks
+   ```
+
+3. The host appears **online** in the Stacks **host switcher** (top of the Stacks
+   page; it shows once at least one agent is connected). Switch to it to manage its
+   stacks.
+
+**Agent prerequisites.** The agent host needs the Docker socket **and the Docker
+Compose plugin** (`docker compose version`) — the agent shells out to compose just
+like the manager. Bind-mount the host's real stacks directory to `--stacks-dir` at
+the **same path** the compose files expect; a mismatch trips the parity check and
+the agent runs read-only until it's fixed (§6.3).
 
 ## Phases
 
-**Phase 1 — visibility (this milestone).** Agent mode + the manager registry +
-read-only remote listing. You add `AGENT_TOKEN`, run `hivedock agent` on each
-remote host, and HiveDock shows every host and its containers in one place. No
-remote mutations yet — the smallest end-to-end slice that proves the transport,
-enrollment, and UI, with the smallest blast radius.
+**Phase 1 — visibility (done).** Agent mode + the manager registry + read-only
+remote listing: every host and its containers in one place.
 
-**Phase 2 — control.** Route the write path (stack up/down, per-service restart,
-compose read/write, logs stream, image updates) to the selected host over the
-same RPC. Each remote op is gated by the token, respects the agent's read-only
-mode, and is logged on both ends. A host switcher threads through Stacks / Home /
-Updates so every view can target a chosen host.
+**Phase 2 — control (done).** The full stack-management surface is routed to the
+selected host over the same RPC: list/detail, deploy with live output
+(up/stop/restart/recreate/pull/update), per-service restart, compose & `.env`
+edit, logs stream, create/rename/delete, per-stack image-update apply, and the
+**remote per-container exec shell**. The portable core lives in
+`internal/hostops` (a `Backend` interface with a `LocalBackend` the manager and
+agent both link, and a manager-side `remoteBackend` that speaks the RPC), so local
+and remote go through identical code with identical security invariants. UI
+enrollment mints the token; a host switcher scopes the Stacks view. The Home
+dashboard and the Updates page stay **local-only** for now.
 
 **Phase 3 — polish.** Per-agent tokens + an approve-pending-agents enrollment
-flow; remote per-container exec (reusing the Phase-1 exec stream, tunneled);
-remote host resource stats; reconnect/health surfaced in the UI.
+flow; per-host Home prefs + remote registry update-checks; remote host resource
+stats; reconnect/health surfaced in the UI.
 
-Keeping Phase 1 read-only is the "safe, simple" choice: it delivers the headline
-value (all your hosts in one dashboard) without opening a remote-mutation surface
-before its gating is designed and reviewed.
+See `docs/MULTIHOST-TESTING.md` for the end-to-end acceptance scenario.

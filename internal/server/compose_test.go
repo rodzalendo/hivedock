@@ -17,6 +17,7 @@ import (
 	"github.com/rogalinski/hivedock/internal/config"
 	"github.com/rogalinski/hivedock/internal/discovery"
 	"github.com/rogalinski/hivedock/internal/events"
+	"github.com/rogalinski/hivedock/internal/hostops"
 	"github.com/rogalinski/hivedock/internal/hoststats"
 	"github.com/rogalinski/hivedock/internal/stacks"
 )
@@ -142,8 +143,8 @@ func TestAtomicWritePreservesContentAndReplaces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := atomicWrite(path, []byte("new content\n")); err != nil {
-		t.Fatalf("atomicWrite: %v", err)
+	if err := hostops.AtomicWrite(path, []byte("new content\n")); err != nil {
+		t.Fatalf("AtomicWrite: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {

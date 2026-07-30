@@ -56,19 +56,20 @@ const actions: {
 // they produce is rendered by DeployOutput, which lives in the Logs card — both
 // read the same deployStore entry, so neither owns the operation's state and
 // unmounting either one (by navigating away) loses nothing.
-export function DeployActions({ stack }: { stack: string }) {
+export function DeployActions({ stack, host = "local" }: { stack: string; host?: string }) {
   const { t } = useI18n();
-  const { phase } = useDeployState(stack);
+  const { phase } = useDeployState(host, stack);
   const running = phase === "running";
 
   async function trigger(a: StackAction) {
     if (running) return;
-    markStarted(stack, a);
+    markStarted(host, stack, a);
     try {
-      await runStackAction(stack, a);
+      await runStackAction(stack, a, host);
       // Output + final status arrive via deploy:* events.
     } catch (err) {
       markFailed(
+        host,
         stack,
         err instanceof Error ? err.message : "failed to start operation",
       );
@@ -106,9 +107,9 @@ export function DeployActions({ stack }: { stack: string }) {
 // DeployOutput is the terminal-style pane for the current/last operation on a
 // stack. It reads deployStore, so output that arrived while the user was on
 // another page is all still here when they come back.
-export function DeployOutput({ stack }: { stack: string }) {
+export function DeployOutput({ stack, host = "local" }: { stack: string; host?: string }) {
   const { t } = useI18n();
-  const { phase, action, lines, error } = useDeployState(stack);
+  const { phase, action, lines, error } = useDeployState(host, stack);
   const paneRef = useRef<HTMLDivElement>(null);
   const running = phase === "running";
 

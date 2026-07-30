@@ -198,6 +198,25 @@ func (c *Client) ContainerLogs(ctx context.Context, id string, tail int, follow 
 	return rc, tty, nil
 }
 
+// ShellCommand maps the requested shell to a FIXED command. The default prefers
+// bash and falls back to sh, resolved inside the container. The returned slice is
+// never built from arbitrary user input — only these three known commands are
+// possible — so there is no command-injection surface (invariant 9). Shared by the
+// manager's local exec and a remote agent's exec so both hosts run the same shell.
+func ShellCommand(shell string) []string {
+	switch shell {
+	case "bash":
+		return []string{"/bin/bash"}
+	case "sh":
+		return []string{"/bin/sh"}
+	default:
+		// Prefer bash, fall back to sh — but check for bash BEFORE exec: a failed
+		// `exec` makes a POSIX shell exit immediately (it would never reach a
+		// `|| exec sh` fallback), so guard it with `command -v` first.
+		return []string{"/bin/sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"}
+	}
+}
+
 // ExecAttach starts an interactive, TTY-attached exec of cmd inside container id
 // and returns the hijacked bidirectional stream (the caller must Close it), plus
 // the exec ID used to resize the TTY. This is a per-container shell only — the

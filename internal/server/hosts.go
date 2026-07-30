@@ -258,11 +258,11 @@ func (r *hostRegistry) list() []*hostConn {
 // AGENT_TOKEN is set. Cross-origin is allowed on purpose: the caller is another
 // host proving itself with the bearer token, not a browser with ambient cookies.
 func (a *api) agentConnect(w http.ResponseWriter, r *http.Request) {
-	if a.cfg.AgentToken == "" {
-		writeError(w, http.StatusNotFound, "multi-host is not enabled (set AGENT_TOKEN)")
+	if !a.agentTokenConfigured() {
+		writeError(w, http.StatusNotFound, "multi-host is not enabled (set AGENT_TOKEN or mint an agent token in Settings)")
 		return
 	}
-	if !bearerEquals(r.Header.Get("Authorization"), a.cfg.AgentToken) {
+	if !a.agentTokenAuthorized(r) {
 		writeError(w, http.StatusUnauthorized, "invalid agent token")
 		return
 	}
@@ -346,7 +346,7 @@ func (a *api) listHosts(w http.ResponseWriter, r *http.Request) {
 // hostContainers lists containers on the named host: the local docker client for
 // "local", else an RPC to that agent.
 func (a *api) hostContainers(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
+	name := chi.URLParam(r, "host")
 	if name == "" || name == "local" {
 		out := []agentrpc.RemoteContainer{}
 		if a.docker != nil {

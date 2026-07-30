@@ -18,14 +18,14 @@ describe("deployStore", () => {
     emit("deploy:line", { stack: "media", line: "Pulling jellyfin" });
     emit("deploy:line", { stack: "media", line: "Pull complete" });
 
-    const st = getDeployState("media");
+    const st = getDeployState("local", "media");
     expect(st.phase).toBe("running");
     expect(st.action).toBe("pull");
     expect(st.lines).toEqual(["Pulling jellyfin", "Pull complete"]);
 
     emit("deploy:end", { stack: "media", ok: true });
-    expect(getDeployState("media").phase).toBe("ok");
-    expect(getDeployState("media").lines).toHaveLength(2);
+    expect(getDeployState("local", "media").phase).toBe("ok");
+    expect(getDeployState("local", "media").lines).toHaveLength(2);
   });
 
   it("keeps each stack's output separate", () => {
@@ -34,16 +34,27 @@ describe("deployStore", () => {
     emit("deploy:line", { stack: "a", line: "for a" });
     emit("deploy:line", { stack: "b", line: "for b" });
 
-    expect(getDeployState("a").lines).toEqual(["for a"]);
-    expect(getDeployState("b").lines).toEqual(["for b"]);
-    expect(getDeployState("b").action).toBe("restart");
+    expect(getDeployState("local", "a").lines).toEqual(["for a"]);
+    expect(getDeployState("local", "b").lines).toEqual(["for b"]);
+    expect(getDeployState("local", "b").action).toBe("restart");
+  });
+
+  it("keeps a same-named stack on two hosts separate", () => {
+    emit("deploy:start", { host: "local", stack: "web", action: "up" });
+    emit("deploy:start", { host: "homelab", stack: "web", action: "pull" });
+    emit("deploy:line", { host: "local", stack: "web", line: "local line" });
+    emit("deploy:line", { host: "homelab", stack: "web", line: "remote line" });
+
+    expect(getDeployState("local", "web").lines).toEqual(["local line"]);
+    expect(getDeployState("homelab", "web").lines).toEqual(["remote line"]);
+    expect(getDeployState("homelab", "web").action).toBe("pull");
   });
 
   it("records a failed operation with its error", () => {
     emit("deploy:start", { stack: "broken", action: "up" });
     emit("deploy:end", { stack: "broken", ok: false, error: "exit status 1" });
 
-    const st = getDeployState("broken");
+    const st = getDeployState("local", "broken");
     expect(st.phase).toBe("error");
     expect(st.error).toBe("exit status 1");
   });
@@ -52,7 +63,7 @@ describe("deployStore", () => {
     emit("deploy:start", { stack: "noisy", action: "pull" });
     for (let i = 0; i < 2500; i++) emit("deploy:line", { stack: "noisy", line: `l${i}` });
 
-    const { lines } = getDeployState("noisy");
+    const { lines } = getDeployState("local", "noisy");
     expect(lines).toHaveLength(2000);
     // The tail is what matters — the newest line must survive the trim.
     expect(lines[lines.length - 1]).toBe("l2499");
@@ -60,16 +71,16 @@ describe("deployStore", () => {
   });
 
   it("reports an unknown stack as idle without creating an entry", () => {
-    const st = getDeployState("never-touched");
+    const st = getDeployState("local", "never-touched");
     expect(st.phase).toBe("idle");
     expect(st.lines).toEqual([]);
-    expect(runningStacks()).not.toContain("never-touched");
+    expect(runningStacks()).not.toContain("local/never-touched");
   });
 
   it("marks running on click, before the server's deploy:start arrives", () => {
-    markStarted("optimistic", "up");
-    expect(getDeployState("optimistic").phase).toBe("running");
-    expect(runningStacks()).toContain("optimistic");
+    markStarted("local", "optimistic", "up");
+    expect(getDeployState("local", "optimistic").phase).toBe("running");
+    expect(runningStacks()).toContain("local/optimistic");
   });
 
   it("resets the buffer when a new operation starts on the same stack", () => {
@@ -78,7 +89,7 @@ describe("deployStore", () => {
     emit("deploy:end", { stack: "reused", ok: true });
 
     emit("deploy:start", { stack: "reused", action: "up" });
-    const st = getDeployState("reused");
+    const st = getDeployState("local", "reused");
     expect(st.lines).toEqual([]);
     expect(st.action).toBe("up");
     expect(st.error).toBeNull();

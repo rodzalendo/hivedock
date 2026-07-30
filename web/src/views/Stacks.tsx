@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchStacks,
+  fetchHosts,
   createStack,
   deleteStack,
   renameStack,
@@ -11,6 +12,7 @@ import {
   type Stack,
   type Service,
 } from "../api";
+import { useHost, setHost } from "../hostStore";
 import {
   DriftBadge,
   DriftInfo,
@@ -33,9 +35,12 @@ import EnvEditor from "../components/EnvEditor";
 
 export default function Stacks() {
   const { t } = useI18n();
+  // The selected host drives which backend the whole view talks to; "local" is
+  // the manager's own host (docs/MULTIHOST.md).
+  const host = useHost();
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["stacks"],
-    queryFn: fetchStacks,
+    queryKey: ["stacks", host],
+    queryFn: () => fetchStacks(host),
     // WebSocket push (useLiveUpdates) drives freshness; this slow interval is a
     // fallback for when the socket is down.
     refetchInterval: 30_000,
@@ -49,19 +54,23 @@ export default function Stacks() {
     name ? navigate("stacks", name) : navigate("stacks");
   const qc = useQueryClient();
 
-  // Which stacks have an available image update (drives the row badge).
+  // Image-update badges come from the local update checker, which is local-only
+  // (the Updates page stays scoped to the manager's host); don't show them on a
+  // remote host where they wouldn't apply.
   const { data: updates } = useQuery({
     queryKey: ["updates"],
     queryFn: fetchUpdates,
     staleTime: 30_000,
+    enabled: host === "local",
   });
   const stacksWithUpdate = useMemo(() => {
     const set = new Set<string>();
+    if (host !== "local") return set;
     for (const u of updates ?? []) {
       if (u.hasUpdate) u.usedBy.forEach((x) => set.add(x.stack));
     }
     return set;
-  }, [updates]);
+  }, [updates, host]);
 
   const stacks = useMemo(() => data ?? [], [data]);
   const selectedStack = useMemo(
@@ -73,8 +82,8 @@ export default function Stacks() {
   const external = stacks.filter((s) => s.origin === "external");
 
   async function handleCreate(name: string, compose?: string) {
-    const created = await createStack(name, compose);
-    await qc.invalidateQueries({ queryKey: ["stacks"] });
+    const created = await createStack(name, compose, host);
+    await qc.invalidateQueries({ queryKey: ["stacks", host] });
     setSelected(created.name);
   }
 
@@ -88,6 +97,13 @@ export default function Stacks() {
             Stacks
           </h2>
           <div className="relative flex items-center gap-2">
+            <HostSwitcher
+              value={host}
+              onChange={(h) => {
+                setSelected(null); // the previous host's stack won't exist here
+                setHost(h);
+              }}
+            />
             <span className="text-xs text-zinc-600">{stacks.length}</span>
             <NewStack onCreate={handleCreate} existing={stacks.map((s) => s.name)} />
           </div>
@@ -140,13 +156,14 @@ export default function Stacks() {
           <StackDetail
             key={selectedStack.name}
             stack={selectedStack}
+            host={host}
             onDeleted={async () => {
               setSelected(null);
-              await qc.invalidateQueries({ queryKey: ["stacks"] });
+              await qc.invalidateQueries({ queryKey: ["stacks", host] });
             }}
             onRenamed={async (newName) => {
               setSelected(newName);
-              await qc.invalidateQueries({ queryKey: ["stacks"] });
+              await qc.invalidateQueries({ queryKey: ["stacks", host] });
             }}
           />
         ) : (
@@ -157,6 +174,40 @@ export default function Stacks() {
       </div>
       </div>
     </div>
+  );
+}
+
+// HostSwitcher lets the Stacks view target a connected agent instead of the
+// local host (docs/MULTIHOST.md). It only appears once at least one agent is
+// connected; an offline host stays selectable (its actions then fail cleanly with
+// a clear "host is offline" message).
+function HostSwitcher({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (host: string) => void;
+}) {
+  const { data: hosts } = useQuery({
+    queryKey: ["hosts"],
+    queryFn: fetchHosts,
+    refetchInterval: 15_000,
+  });
+  if (!hosts || hosts.length <= 1) return null;
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      title="Host"
+      className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-accent-500"
+    >
+      {hosts.map((h) => (
+        <option key={h.name} value={h.name}>
+          {h.local ? `${h.name} (this host)` : h.name}
+          {h.online ? "" : " — offline"}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -453,10 +504,12 @@ type ActionMode = "idle" | "rename" | "delete";
 
 function StackDetail({
   stack,
+  host,
   onDeleted,
   onRenamed,
 }: {
   stack: Stack;
+  host: string;
   onDeleted: () => void | Promise<void>;
   onRenamed: (newName: string) => void | Promise<void>;
 }) {
@@ -490,7 +543,7 @@ function StackDetail({
             <DriftInfo
               services={driftedServices}
               onForceRecreate={
-                managed ? () => void runStackAction(stack.name, "recreate") : undefined
+                managed ? () => void runStackAction(stack.name, "recreate", host) : undefined
               }
             />
           )}
@@ -507,6 +560,7 @@ function StackDetail({
             <div className="ml-auto">
               <StackActions
                 stack={stack}
+                host={host}
                 onDeleted={onDeleted}
                 onRenamed={onRenamed}
               />
@@ -524,7 +578,7 @@ function StackDetail({
           <div className="border-t border-zinc-800">
             {/* Buttons only — their output renders in the Logs card below, so
                 it survives navigating away mid-operation (deployStore). */}
-            <DeployActions stack={stack.name} />
+            <DeployActions stack={stack.name} host={host} />
           </div>
         )}
 
@@ -549,6 +603,7 @@ function StackDetail({
                     key={svc.name}
                     svc={svc}
                     stack={managed ? stack.name : undefined}
+                    host={host}
                   />
                 ))}
               </tbody>
@@ -559,11 +614,12 @@ function StackDetail({
 
       {/* Below: Compose/Env (toggled) on the left, always-on Logs right. */}
       <div className={`grid gap-4 ${managed ? "xl:grid-cols-2" : ""}`}>
-        {managed && <ConfigCard key={`cfg-${key}`} stack={stack.name} />}
+        {managed && <ConfigCard key={`cfg-${key}`} stack={stack.name} host={host} />}
 
         <OutputCard
           key={`out-${key}`}
           stack={stack.name}
+          host={host}
           services={services.map((s) => s.name)}
           managed={managed}
         />
@@ -580,16 +636,18 @@ function StackDetail({
 // this stack doing right now".
 function OutputCard({
   stack,
+  host,
   services,
   managed,
 }: {
   stack: string;
+  host: string;
   services: string[];
   managed: boolean;
 }) {
   const { t } = useI18n();
   const [tab, setTab] = useState<"logs" | "operation">("logs");
-  const { phase } = useDeployState(stack);
+  const { phase } = useDeployState(host, stack);
 
   // Jump to the Operation tab when one starts: the user pressed a button and
   // expects to watch it. Only on the transition into "running", so it never
@@ -604,7 +662,7 @@ function OutputCard({
         <div className="border-b border-zinc-800 px-5 py-3 text-xs font-medium uppercase tracking-wide text-zinc-400">
           {t("stacks.logs")}
         </div>
-        <LogsPanel stack={stack} services={services} />
+        <LogsPanel stack={stack} services={services} host={host} />
       </div>
     );
   }
@@ -633,10 +691,10 @@ function OutputCard({
       {/* LogsPanel stays mounted while hidden so its stream and scrollback
           survive a trip to the Operation tab. */}
       <div className={tab === "logs" ? undefined : "hidden"}>
-        <LogsPanel stack={stack} services={services} />
+        <LogsPanel stack={stack} services={services} host={host} />
       </div>
       <div className={tab === "operation" ? undefined : "hidden"}>
-        <DeployOutput stack={stack} />
+        <DeployOutput stack={stack} host={host} />
       </div>
     </div>
   );
@@ -644,7 +702,7 @@ function OutputCard({
 
 // ConfigCard holds the stack's editable files — the compose file and its
 // .env — in one card with a small toggle between them.
-function ConfigCard({ stack }: { stack: string }) {
+function ConfigCard({ stack, host }: { stack: string; host: string }) {
   const [file, setFile] = useState<"compose" | "env">("compose");
   return (
     <div className="self-start rounded-xl border border-zinc-800 bg-zinc-900/40">
@@ -664,9 +722,9 @@ function ConfigCard({ stack }: { stack: string }) {
         ))}
       </div>
       {file === "compose" ? (
-        <ComposeEditor key={stack} stack={stack} />
+        <ComposeEditor key={stack} stack={stack} host={host} />
       ) : (
-        <EnvEditor key={stack} stack={stack} />
+        <EnvEditor key={stack} stack={stack} host={host} />
       )}
     </div>
   );
@@ -677,10 +735,12 @@ function ConfigCard({ stack }: { stack: string }) {
 // without orphaning containers); delete stops it first, then removes the dir.
 function StackActions({
   stack,
+  host,
   onDeleted,
   onRenamed,
 }: {
   stack: Stack;
+  host: string;
   onDeleted: () => void | Promise<void>;
   onRenamed: (newName: string) => void | Promise<void>;
 }) {
@@ -706,7 +766,7 @@ function StackActions({
     setBusy(true);
     setError(null);
     try {
-      await renameStack(stack.name, target);
+      await renameStack(stack.name, target, host);
       await onRenamed(target);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rename failed.");
@@ -718,7 +778,7 @@ function StackActions({
     setBusy(true);
     setError(null);
     try {
-      await deleteStack(stack.name, deleteVolumes);
+      await deleteStack(stack.name, deleteVolumes, host);
       await onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed.");
@@ -829,7 +889,15 @@ function StackActions({
 // ServiceRow is one container line; managed stacks (stack prop set) get a
 // per-service restart button. The spinner clears when the operation's
 // deploy:end event lands (the restart itself streams to the console above).
-function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
+function ServiceRow({
+  svc,
+  stack,
+  host = "local",
+}: {
+  svc: Service;
+  stack?: string;
+  host?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shell, setShell] = useState(false);
@@ -840,10 +908,11 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
     const onDeploy = (ev: Event) => {
       const msg = (ev as CustomEvent).detail as {
         type: string;
-        payload?: { stack?: string; service?: string };
+        payload?: { host?: string; stack?: string; service?: string };
       };
       if (
         msg.type === "deploy:end" &&
+        (msg.payload?.host ?? "local") === host &&
         msg.payload?.stack === stack &&
         msg.payload?.service === svc.name
       ) {
@@ -857,14 +926,14 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
       window.removeEventListener("hivedock:deploy", onDeploy);
       window.clearTimeout(timer);
     };
-  }, [busy, stack, svc.name]);
+  }, [busy, stack, svc.name, host]);
 
   async function onRestart() {
     if (!stack || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await restartService(stack, svc.name);
+      await restartService(stack, svc.name, host);
     } catch (err) {
       setBusy(false);
       setError(err instanceof Error ? err.message : "Restart failed.");
@@ -929,6 +998,7 @@ function ServiceRow({ svc, stack }: { svc: Service; stack?: string }) {
             <ContainerTerminal
               containerId={svc.containerId}
               title={stack ? `${stack} / ${svc.name}` : svc.name}
+              host={host}
               onClose={() => setShell(false)}
             />
           )}

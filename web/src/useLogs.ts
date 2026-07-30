@@ -20,11 +20,12 @@ interface ServerMessage {
 
 const MAX_LINES = 2000;
 
-// useLogs opens a dedicated WebSocket, subscribes to a stack's logs, and
-// accumulates a bounded ring of lines. A dedicated socket (separate from the
-// app-wide events socket) keeps log lifecycle simple: closing it cancels the
-// server-side streams. `enabled` toggles follow.
-export function useLogs(stack: string | null, enabled: boolean) {
+// useLogs opens a dedicated WebSocket, subscribes to a stack's logs on a given
+// host (local or a remote agent, docs/MULTIHOST.md), and accumulates a bounded
+// ring of lines. A dedicated socket (separate from the app-wide events socket)
+// keeps log lifecycle simple: closing it cancels the server-side streams (which,
+// for a remote host, cancels the agent's follow). `enabled` toggles follow.
+export function useLogs(host: string, stack: string | null, enabled: boolean) {
   const [lines, setLines] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
@@ -44,7 +45,7 @@ export function useLogs(stack: string | null, enabled: boolean) {
 
     ws.onopen = () => {
       setConnected(true);
-      ws.send(JSON.stringify({ type: "logs:subscribe", payload: { stack, tail: 200 } }));
+      ws.send(JSON.stringify({ type: "logs:subscribe", payload: { host, stack, tail: 200 } }));
     };
     ws.onmessage = (ev) => {
       let msg: ServerMessage;
@@ -77,11 +78,11 @@ export function useLogs(stack: string | null, enabled: boolean) {
 
     return () => {
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "logs:unsubscribe", payload: { stack } }));
+        ws.send(JSON.stringify({ type: "logs:unsubscribe", payload: { host, stack } }));
       }
       ws.close();
     };
-  }, [stack, enabled]);
+  }, [host, stack, enabled]);
 
   return { lines, error, connected };
 }

@@ -9,7 +9,12 @@ import (
 )
 
 func (a *api) listStacks(w http.ResponseWriter, r *http.Request) {
-	list, err := a.stacks.List(r.Context())
+	be, err := a.backendFor(hostParam(r))
+	if err != nil {
+		a.httpError(w, err)
+		return
+	}
+	list, err := be.ListStacks(r.Context())
 	if err != nil {
 		a.logger.Error("list stacks", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to list stacks: "+err.Error())
@@ -22,15 +27,14 @@ func (a *api) listStacks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) getStack(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	st, ok, err := a.stacks.Get(r.Context(), name)
+	be, err := a.backendFor(hostParam(r))
 	if err != nil {
-		a.logger.Error("get stack", "name", name, "err", err)
-		writeError(w, http.StatusInternalServerError, "failed to get stack: "+err.Error())
+		a.httpError(w, err)
 		return
 	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "stack not found: "+name)
+	st, err := be.GetStack(r.Context(), chi.URLParam(r, "name"))
+	if err != nil {
+		a.httpError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)

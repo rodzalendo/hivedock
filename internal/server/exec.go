@@ -4,55 +4,49 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+
+	"github.com/rogalinski/hivedock/internal/agentrpc"
+	"github.com/rogalinski/hivedock/internal/docker"
 )
 
-// shellCmd maps the requested shell to a FIXED command. The default prefers bash
-// and falls back to sh, resolved inside the container. Crucially the returned
-// slice is never built from arbitrary user input — only these three known
-// commands are possible — so there is no command-injection surface (invariant 9:
-// no shell metacharacters we didn't write ourselves).
-func shellCmd(shell string) []string {
-	switch shell {
-	case "bash":
-		return []string{"/bin/bash"}
-	case "sh":
-		return []string{"/bin/sh"}
-	default:
-		// Prefer bash, fall back to sh — but check for bash BEFORE exec: a failed
-		// `exec` makes a POSIX shell exit immediately (it would never reach a
-		// `|| exec sh` fallback), so guard it with `command -v` first.
-		return []string{"/bin/sh", "-c", "if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi"}
-	}
-}
-
 // containerExec upgrades to a WebSocket and runs an interactive shell INSIDE the
-// selected container (docker exec — never a host shell). It is auth-gated (it
-// lives in the requireAuth group) and refused when a boot check put the server
-// in read-only mode, matching how every other privileged action is gated. Each
-// session is logged.
+// selected container (docker exec — never a host shell), on the local host or, with
+// ?host=<name>, on a connected agent. It is auth-gated (it lives in the requireAuth
+// group) and refused when a boot check put the server in read-only mode, matching
+// how every other privileged action is gated. A remote host runs the same fixed
+// shell and enforces its own read-only mode on the agent. Each session is logged.
 func (a *api) containerExec(w http.ResponseWriter, r *http.Request) {
-	if a.docker == nil {
-		writeError(w, http.StatusServiceUnavailable, "docker is unavailable")
-		return
-	}
-	// Exec can mutate a container, so it is refused in read-only mode just like a
-	// write. (enforceReadOnly only blocks unsafe HTTP methods; a WS upgrade is a
-	// GET, so the check has to be explicit here.)
-	if a.readOnlyReason != "" {
-		writeError(w, http.StatusServiceUnavailable, a.readOnlyReason)
-		return
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		host = "local"
 	}
 	id := chi.URLParam(r, "id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "missing container id")
 		return
 	}
-	cmd := shellCmd(r.URL.Query().Get("shell"))
+	shell := r.URL.Query().Get("shell")
+
+	if host == "local" {
+		if a.docker == nil {
+			writeError(w, http.StatusServiceUnavailable, "docker is unavailable")
+			return
+		}
+		// Exec can mutate a container, so it is refused in read-only mode just like a
+		// write. (enforceReadOnly only blocks unsafe HTTP methods; a WS upgrade is a
+		// GET, so the check has to be explicit here.)
+		if a.readOnlyReason != "" {
+			writeError(w, http.StatusServiceUnavailable, a.readOnlyReason)
+			return
+		}
+	} else if a.hosts.get(host) == nil {
+		writeError(w, http.StatusBadGateway, "host is offline: "+host)
+		return
+	}
 
 	up := upgrader
 	up.CheckOrigin = a.checkWSOrigin
@@ -63,8 +57,12 @@ func (a *api) containerExec(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	a.logger.Info("container exec session", "container", id, "shell", strings.Join(cmd, " "), "remote", r.RemoteAddr)
-	a.runContainerExec(r.Context(), conn, id, cmd)
+	a.logger.Info("container exec session", "host", host, "container", id, "shell", shell, "remote", r.RemoteAddr)
+	if host == "local" {
+		a.runContainerExec(r.Context(), conn, id, docker.ShellCommand(shell))
+	} else {
+		a.runRemoteExec(r.Context(), conn, host, id, shell)
+	}
 }
 
 // execControl is a client → server control frame (sent as a WS text message).
@@ -114,7 +112,70 @@ func (a *api) runContainerExec(ctx context.Context, conn *websocket.Conn, id str
 		}
 	}()
 
-	// Sole socket writer: terminal bytes + keepalive pings.
+	a.pumpExecSocket(ctx, cancel, conn, out,
+		func(data []byte) bool { _, err := hj.Conn.Write(data); return err == nil },
+		func(rows, cols uint) { _ = a.docker.ExecResize(ctx, execID, rows, cols) })
+}
+
+// runRemoteExec tunnels an exec to an agent over the RPC: the agent opens the
+// shell against its own docker and streams output as chunk frames; the manager
+// relays browser stdin as execInput frames and resizes as execResize frames, and a
+// closed browser socket cancels the stream (which stops the agent's exec).
+func (a *api) runRemoteExec(ctx context.Context, conn *websocket.Conn, host, id, shell string) {
+	h := a.hosts.get(host)
+	if h == nil {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31mhost is offline\x1b[0m\r\n"))
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	ch, streamID, err := h.CallStream(ctx, agentrpc.MethodExec, agentrpc.ExecParams{ContainerID: id, Shell: shell})
+	if err != nil {
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31mcould not open a shell: "+err.Error()+"\x1b[0m\r\n"))
+		return
+	}
+
+	// Agent frames → out channel: chunk = terminal bytes; terminal frame ends it.
+	out := make(chan []byte, 64)
+	go func() {
+		defer cancel()
+		for resp := range ch {
+			if resp.Kind != agentrpc.KindStream {
+				if resp.Error != "" {
+					select {
+					case out <- []byte("\r\n\x1b[31m" + resp.Error + "\x1b[0m\r\n"):
+					case <-ctx.Done():
+					}
+				}
+				return
+			}
+			var b []byte
+			if json.Unmarshal(resp.Result, &b) != nil {
+				continue
+			}
+			select {
+			case out <- b:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	a.pumpExecSocket(ctx, cancel, conn, out,
+		func(data []byte) bool {
+			return h.sendFrame(agentrpc.MethodExecInput, agentrpc.ExecInputParams{ID: streamID, Data: data}) == nil
+		},
+		func(rows, cols uint) {
+			_ = h.sendFrame(agentrpc.MethodExecResize, agentrpc.ExecResizeParams{ID: streamID, Rows: rows, Cols: cols})
+		})
+}
+
+// pumpExecSocket is the shared exec plumbing: a single writer goroutine drains out
+// to the browser (binary frames) with keepalive pings, while the read loop routes
+// browser binary frames to writeStdin and resize controls to resize. Any error
+// cancels the session. Used by both the local and remote exec paths.
+func (a *api) pumpExecSocket(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, out <-chan []byte, writeStdin func([]byte) bool, resize func(rows, cols uint)) {
 	go func() {
 		ticker := time.NewTicker(pingPeriod)
 		defer ticker.Stop()
@@ -141,7 +202,6 @@ func (a *api) runContainerExec(ctx context.Context, conn *websocket.Conn, id str
 		}
 	}()
 
-	// Client → container: binary = stdin, text = control (resize).
 	conn.SetReadLimit(1 << 20)
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
@@ -150,18 +210,18 @@ func (a *api) runContainerExec(ctx context.Context, conn *websocket.Conn, id str
 	for {
 		mt, data, err := conn.ReadMessage()
 		if err != nil {
-			return // client closed; defers cancel + close the exec
+			return // client closed; the deferred cancel stops the exec
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 		switch mt {
 		case websocket.BinaryMessage:
-			if _, err := hj.Conn.Write(data); err != nil {
+			if !writeStdin(data) {
 				return
 			}
 		case websocket.TextMessage:
 			var ctl execControl
 			if json.Unmarshal(data, &ctl) == nil && ctl.Type == "resize" && ctl.Cols > 0 && ctl.Rows > 0 {
-				_ = a.docker.ExecResize(ctx, execID, ctl.Rows, ctl.Cols)
+				resize(ctl.Rows, ctl.Cols)
 			}
 		}
 	}
