@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage 1: build the frontend -------------------------------------------
-FROM node:22-alpine AS web
+# Pinned to the BUILD platform (the native runner), never the target arch: the
+# SPA is arch-independent JS, so building it once here avoids running an emulated
+# `npm`/`vite build` under QEMU on the arm64 leg (which dominated build time).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm ci || npm install
@@ -9,7 +12,10 @@ COPY web/ ./
 RUN npm run build
 
 # --- Stage 2: build the Go binary ------------------------------------------
-FROM golang:1.23-alpine AS build
+# Also runs on the native BUILD platform and CROSS-compiles to the target arch
+# (TARGETOS/TARGETARCH are provided by buildx). CGO is off, so cross-compilation
+# is trivial and fast — no arm64 emulation for the Go build.
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS build
 WORKDIR /src
 # The compose CLI is a runtime dependency (subprocess), not a build one.
 COPY go.mod go.sum* ./
@@ -18,7 +24,9 @@ COPY . .
 # Bring in the freshly built SPA so go:embed has real assets.
 COPY --from=web /web/dist ./web/dist
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags="-s -w -X github.com/rogalinski/hivedock/internal/server.version=${VERSION}" \
     -o /out/hivedock ./cmd/hivedock
