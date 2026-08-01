@@ -1,0 +1,3 @@
+# Keeps the dist/ directory present so `//go:embed all:dist` (web/embed.go)
+# compiles before the frontend is built. The real build output (gitignored)
+# replaces this at image-build time. Do not delete.
