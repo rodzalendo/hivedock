@@ -846,6 +846,25 @@ function Card({
   const qc = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
+  // The action row is hover-revealed, but an OPEN popover has to pin it visible:
+  // otherwise moving the cursor off the card hides the editor mid-edit. It stays
+  // until save, cancel, Escape, or a click outside.
+  const [editorOpen, setEditorOpen] = useState(false);
+  const actionsPinned = editorOpen || menuOpen;
+  const portsRef = useRef<HTMLDivElement>(null);
+
+  // Pinned means the ports menu no longer disappears when the pointer leaves, so
+  // it needs the same click-outside close the editor has.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (portsRef.current && !portsRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
   const toggleHidden = useMutation({
     mutationFn: () => setServiceVisibility(entry.stack, entry.service, !entry.hidden),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["home"] }),
@@ -905,11 +924,15 @@ function Card({
 
         {/* Edit/hide/ports only render on hover so they don't reserve width —
             the card title keeps the full row, and they appear to the LEFT of
-            the expander so it is never covered. */}
+            the expander so it is never covered. An open popover pins them. */}
         {!editing && (
-          <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+          <div
+            className={`shrink-0 items-center gap-0.5 ${
+              actionsPinned ? "flex" : "hidden group-hover:flex"
+            }`}
+          >
             {entry.ports && entry.ports.length > 1 && (
-              <div className="relative">
+              <div className="relative" ref={portsRef}>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
                   className="rounded px-1.5 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
@@ -934,7 +957,7 @@ function Card({
                 )}
               </div>
             )}
-            <CardEditor entry={entry} />
+            <CardEditor entry={entry} open={editorOpen} setOpen={setEditorOpen} />
             <button
               onClick={() => toggleHidden.mutate()}
               className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
@@ -1009,10 +1032,19 @@ function SubRow({ entry }: { entry: HomeEntry }) {
 // CardEditor lets the user rename a card, set a custom icon (image URL or
 // dashboard-icons slug), and set a custom link URL — or reset any to the
 // automatic value. Persisted server-side.
-function CardEditor({ entry }: { entry: HomeEntry }) {
+// CardEditor's open state is owned by the Card so the hover-revealed action row
+// can stay pinned while the editor is open (it lives inside that row).
+function CardEditor({
+  entry,
+  open,
+  setOpen,
+}: {
+  entry: HomeEntry;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
   const qc = useQueryClient();
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState(entry.name);
   const [icon, setIcon] = useState(entry.icon ?? "");
   const [url, setUrl] = useState(entry.url ?? "");
@@ -1062,7 +1094,7 @@ function CardEditor({ entry }: { entry: HomeEntry }) {
           setIcon(entry.icon ?? "");
           setUrl(entry.url ?? "");
           setError(null);
-          setOpen((v) => !v);
+          setOpen(!open);
         }}
         className="rounded px-1.5 py-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-300"
         title="Edit name, icon & link"
