@@ -1,29 +1,21 @@
 name: Release
 
 # Publishes multi-arch images to GHCR and cosign-signs them:
-#   - push tag vX.Y.Z          -> :X.Y.Z, :X.Y, :latest   (a stable release)
-#   - push tag vX.Y.Z-<pre>    -> :X.Y.Z-<pre> only        (a pre-release / test build)
+#   - push tag vX.Y.Z -> :X.Y.Z, :X.Y, :latest
 #
-# Pre-release tags (any tag with a hyphen, e.g. v1.3.0-rc.1) are a TEST CHANNEL:
-# they publish only their exact :X.Y.Z-<pre> image and never move :latest or the
-# :X.Y line, so new `docker pull …:latest` installs keep getting the last stable
-# release. Existing installs aren't offered them either: the in-app self-update
-# only offers a candidate on the SAME track (same version-suffix), so a prod box
-# on 1.2.9 (empty suffix) never sees 1.3.0-rc.1 (suffix "-rc.1"). Ship 1.3 for
-# testing as v1.3.0-rc.N; cut plain v1.3.0 when it's ready to be latest.
+# Versioning is one rule: every release bumps the patch by 0.0.1. Tag it, push
+# it, it ships — no approval gate, no pre-release/rc channel. (Both existed and
+# were removed deliberately; don't reintroduce them.)
 #
 # Releases are cut from tags only. There is no rolling tag: a push to main
 # publishes nothing, so :latest always points at a deliberate, versioned
 # release rather than whatever landed last. (A :edge tag tracking main used to
-# exist and was removed — don't reintroduce it.)
+# exist and was removed — don't reintroduce it either.)
 #
 # Every pushed digest is signed keyless via GitHub Actions OIDC (no long-lived
 # key material — the trust root is this workflow's identity), and carries SLSA
 # provenance + an SBOM. HiveDock's in-app self-update verifies these signatures
 # before offering or applying an update (docs/HARDENING.md §3).
-#
-# NOTE: harden further in repo settings — protect the v* tags, require a reviewer
-# on the `release` environment below, and (recommended) pin these actions by SHA.
 on:
   push:
     tags: ["v*"]
@@ -36,7 +28,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: release # gate releases with a required reviewer (configure in repo settings)
     steps:
       - uses: actions/checkout@v4
 
@@ -48,7 +39,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=raw,value=latest
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -97,6 +88,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          # A hyphenated tag (v1.3.0-rc.1) is a pre-release: mark it so on GitHub
-          # too, so the "Latest release" badge stays on the last stable version.
-          prerelease: ${{ contains(github.ref, '-') }}
