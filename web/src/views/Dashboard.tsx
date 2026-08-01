@@ -15,6 +15,7 @@ import {
 import AppIcon from "../components/AppIcon";
 import HostStrip from "../components/HostStrip";
 import { useI18n } from "../i18n";
+import { useEffectiveColumns } from "../useColumns";
 import { ChevronsDownIcon, EyeIcon, EyeOffIcon, PencilIcon } from "../components/icons";
 
 // The pool every card lives in unless the user (or a compose label) says
@@ -24,15 +25,20 @@ const DEFAULT_GROUP = "Apps";
 
 const keyOf = (e: HomeEntry) => `${e.stack}/${e.service}`;
 
-// Group columns on wider screens; small screens always stack to one column.
 // Each column is a real element (not CSS multicol) so groups can be dropped
-// into a specific column and stay there.
+// into a specific column and stay there. The count is resolved in JS rather
+// than by responsive classes: the bucket count MUST equal the number of columns
+// the browser actually renders. When responsive classes narrowed the grid on
+// their own (say a 4-column layout falling back to lg:grid-cols-3), the extra
+// bucket wrapped onto a second grid row and its group appeared far below its
+// neighbours, under the tallest column instead of beside them.
 const gridColsClass: Record<number, string> = {
   1: "grid-cols-1",
-  2: "grid-cols-1 sm:grid-cols-2",
-  3: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
-  4: "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
 };
+
 
 // Tile size presets (the Customize slider): min card width for the ungrouped
 // grid plus icon/padding/font scaling. The compact size drops the subtitle so
@@ -111,7 +117,11 @@ export default function Dashboard() {
     () => (editing ? draft : (savedLayout ?? {})),
     [editing, draft, savedLayout],
   );
+  // `columns` is what the user asked for (drives the Customize slider);
+  // `renderColumns` is what fits right now and drives both the bucketing and
+  // the grid, so the two can never disagree.
   const columns = Math.min(4, Math.max(1, layout.columns ?? 1));
+  const renderColumns = useEffectiveColumns(columns);
   const tile = tileSizes[Math.min(3, Math.max(1, layout.tileSize ?? 2))];
 
   const entries = useMemo(() => data ?? [], [data]);
@@ -239,24 +249,27 @@ export default function Dashboard() {
   // everything else fills the emptiest column in display order.
   const columnized = useMemo(() => {
     const cols: (readonly [string, HomeEntry[]])[][] = Array.from(
-      { length: columns },
+      { length: renderColumns },
       () => [],
     );
     for (const g of namedGroups) {
       const want = layout.groupColumns?.[g[0]];
       let c: number;
-      if (want !== undefined && want >= 0 && want < columns) {
+      // An assignment past the columns that currently fit (a 4-column layout
+      // viewed on a narrower screen) falls back to filling, rather than being
+      // dropped or forced into a bucket that isn't rendered.
+      if (want !== undefined && want >= 0 && want < renderColumns) {
         c = want;
       } else {
         c = 0;
-        for (let i = 1; i < columns; i++) {
+        for (let i = 1; i < renderColumns; i++) {
           if (cols[i].length < cols[c].length) c = i;
         }
       }
       cols[c].push(g);
     }
     return cols;
-  }, [namedGroups, columns, layout.groupColumns]);
+  }, [namedGroups, renderColumns, layout.groupColumns]);
   const columnOf = useMemo(() => {
     const m = new Map<string, number>();
     columnized.forEach((col, i) => col.forEach(([k]) => m.set(k, i)));
@@ -703,7 +716,7 @@ export default function Dashboard() {
       )}
 
       {namedGroups.length > 0 || editing ? (
-        <div className={`grid gap-4 ${gridColsClass[columns]}`}>
+        <div className={`grid gap-4 ${gridColsClass[renderColumns]}`}>
           {columnized.map((colGroups, ci) => (
             <div
               key={ci}
