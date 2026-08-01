@@ -1,4 +1,9 @@
 version: 2
+
+# Every ecosystem groups its updates into a single PR. Ungrouped, one PR per
+# dependency piled up 12 open PRs for what was really three decisions, and each
+# one burns a CI run. Majors are excluded from the groups below (and mostly
+# ignored outright) so a breaking bump still arrives on its own, reviewable.
 updates:
   # Go modules — the transitive set is pinned to stay on Go 1.23 (see go.mod):
   # bumping the Docker SDK, otel, or the golang.org/x deps pulls a Go 1.24/1.25
@@ -10,6 +15,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      go-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "github.com/docker/docker"
       - dependency-name: "github.com/docker/go-connections"
@@ -29,6 +38,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      web-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -38,3 +51,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
