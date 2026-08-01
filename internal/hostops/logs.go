@@ -6,11 +6,16 @@ import (
 	"context"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const logTailDefault = 200
+
+// logRescanInterval is how often an open log stream re-resolves a stack's
+// containers, to pick up the new IDs a deploy/recreate produces.
+const logRescanInterval = 2 * time.Second
 
 // streamOneContainer pipes one container's logs to onLine until ctx ends. It
 // demuxes Docker's stdout/stderr framing (or reads a raw TTY stream) and

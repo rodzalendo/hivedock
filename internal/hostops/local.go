@@ -3,12 +3,14 @@ package hostops
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rogalinski/hivedock/internal/compose"
 	"github.com/rogalinski/hivedock/internal/docker"
@@ -359,6 +361,15 @@ func (b *LocalBackend) RunAction(ctx context.Context, name, action, service stri
 	return b.runner.Exec(ctx, op, onLine)
 }
 
+// Logs follows every container of a stack until ctx is cancelled. Two rules make
+// it behave like `docker compose logs -f`:
+//
+//   - State is not filtered. A crash-looping (restarting) or exited container is
+//     exactly when its output matters most; docker's follow survives a restart of
+//     the same container, so a crash loop keeps streaming.
+//   - Containers are re-resolved on a ticker, so a deploy/recreate — which gives
+//     every service a NEW container ID and kills the old follow — reattaches
+//     instead of leaving a dead pane. Each container ID is attached at most once.
 func (b *LocalBackend) Logs(ctx context.Context, name string, tail int, onLine func(LogLine)) error {
 	if b.docker == nil {
 		return ErrNoDocker
@@ -366,31 +377,50 @@ func (b *LocalBackend) Logs(ctx context.Context, name string, tail int, onLine f
 	if tail <= 0 {
 		tail = logTailDefault
 	}
-	st, ok, err := b.stacks.Get(ctx, name)
-	if err != nil {
+
+	var wg sync.WaitGroup
+	attached := map[string]bool{} // container ID -> already following
+
+	attach := func() error {
+		st, ok, err := b.stacks.Get(ctx, name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrNotFound
+		}
+		for _, svc := range logTargets(st) {
+			if attached[svc.ContainerID] {
+				continue
+			}
+			attached[svc.ContainerID] = true
+			wg.Add(1)
+			go func(service, id string) {
+				defer wg.Done()
+				_ = b.streamOneContainer(ctx, service, id, tail, onLine)
+			}(svc.Name, svc.ContainerID)
+		}
+		return nil
+	}
+
+	if err := attach(); err != nil {
 		return err
 	}
-	if !ok {
-		return ErrNotFound
-	}
-	var wg sync.WaitGroup
-	var started int
-	for _, svc := range st.Services {
-		if svc.ContainerID == "" || svc.State != "running" {
-			continue
+	// Nothing deployed yet is not an error: the rescan below fills the pane in as
+	// soon as a deploy creates containers (the UI shows its waiting placeholder).
+	ticker := time.NewTicker(logRescanInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			wg.Wait()
+			return nil
+		case <-ticker.C:
+			if err := attach(); err != nil && !errors.Is(err, ErrNotFound) {
+				b.logger.Debug("logs rescan failed", "stack", name, "err", err)
+			}
 		}
-		started++
-		wg.Add(1)
-		go func(service, id string) {
-			defer wg.Done()
-			_ = b.streamOneContainer(ctx, service, id, tail, onLine)
-		}(svc.Name, svc.ContainerID)
 	}
-	if started == 0 {
-		return fmt.Errorf("no running containers to stream")
-	}
-	wg.Wait()
-	return nil
 }
 
 // Runner exposes the per-stack lock so the server/agent can 409 a busy stack
@@ -416,6 +446,19 @@ func (b *LocalBackend) childOfStacksDir(dir string) (string, error) {
 		return "", ErrEscape
 	}
 	return abs, nil
+}
+
+// logTargets picks the services whose logs can be followed: every one that has a
+// container, whatever its state. Deliberately NOT filtered to "running" — a
+// crash-looping (restarting) or exited container is when its output matters most.
+func logTargets(st stacks.Stack) []stacks.Service {
+	var out []stacks.Service
+	for _, svc := range st.Services {
+		if svc.ContainerID != "" {
+			out = append(out, svc)
+		}
+	}
+	return out
 }
 
 func hasContainers(st stacks.Stack) bool {

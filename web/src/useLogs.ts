@@ -57,6 +57,9 @@ export function useLogs(host: string, stack: string | null, enabled: boolean) {
       switch (msg.type) {
         case "logs:line": {
           const p = msg.payload ?? {};
+          // Output arriving clears any earlier error, so a transient one (host
+          // briefly offline) can't leave a stale red box over a live stream.
+          setError(null);
           setLines((prev) => {
             const next = prev.concat({
               id: idRef.current++,

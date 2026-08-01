@@ -3,7 +3,31 @@ package hostops
 import (
 	"reflect"
 	"testing"
+
+	"github.com/rogalinski/hivedock/internal/stacks"
 )
+
+// Logs must follow containers in ANY state — a crash-looping container is the
+// one whose output the user needs. Filtering to "running" here was the bug that
+// left the pane empty for a restarting service.
+func TestLogTargetsIgnoresState(t *testing.T) {
+	st := stacks.Stack{Services: []stacks.Service{
+		{Name: "app", ContainerID: "aaa", State: "running"},
+		{Name: "crashloop", ContainerID: "bbb", State: "restarting"},
+		{Name: "dead", ContainerID: "ccc", State: "exited"},
+		{Name: "paused", ContainerID: "ddd", State: "paused"},
+		{Name: "never-deployed", State: "absent"}, // no container: nothing to follow
+	}}
+
+	var got []string
+	for _, svc := range logTargets(st) {
+		got = append(got, svc.Name)
+	}
+	want := []string{"app", "crashloop", "dead", "paused"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("logTargets = %v, want %v", got, want)
+	}
+}
 
 func TestLineWriterSplitsAcrossChunks(t *testing.T) {
 	var got []string
