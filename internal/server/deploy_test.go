@@ -58,3 +58,20 @@ func TestRestartServiceValidation(t *testing.T) {
 		t.Fatalf("missing service = %d, want 404", rec.Code)
 	}
 }
+
+// A deploy that can move an image must invalidate that stack's cached update
+// check — otherwise a just-pulled `:latest` keeps reporting "update available"
+// from its pre-pull digest. Actions that only change container state must not
+// trigger the (network) re-check.
+func TestMovesImages(t *testing.T) {
+	for _, action := range []string{"update", "pull", "up", "recreate"} {
+		if !movesImages(action) {
+			t.Errorf("movesImages(%q) = false, want true", action)
+		}
+	}
+	for _, action := range []string{"down", "restart", "stop", "bogus"} {
+		if movesImages(action) {
+			t.Errorf("movesImages(%q) = true, want false", action)
+		}
+	}
+}

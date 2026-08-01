@@ -127,6 +127,26 @@ func (a *api) executeDeploy(host string, be hostops.Backend, name, action, servi
 	// The operation changed container state; nudge clients to refetch the truth
 	// model (docker events usually cover this, but not for pull/no-op cases).
 	a.hub.NotifyChanged("deploy:" + action)
+
+	// A successful pull/redeploy invalidates this stack's cached update results.
+	// Refresh them here so the Updates page is correct even if the browser never
+	// asks for a re-check (or its request lost the race with a scheduled sweep).
+	// Local host only: the update cache is keyed by image across the manager's own
+	// stacks, and the checker inspects the manager's daemon for local digests.
+	if err == nil && host == "local" && movesImages(action) {
+		go a.recheckStackImages(name)
+	}
+}
+
+// movesImages reports whether an action can change which image a service runs,
+// and therefore whether the cached update check for it is now stale.
+func movesImages(action string) bool {
+	switch compose.Action(action) {
+	case compose.ActionUpdate, compose.ActionPull, compose.ActionUp, compose.ActionRecreate:
+		return true
+	default:
+		return false
+	}
 }
 
 // newOpID returns a short random hex id used to correlate deploy:* messages.

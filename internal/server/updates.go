@@ -184,6 +184,52 @@ func (a *api) runUpdateCheck(images []string) {
 	a.hub.Publish(events.Message{Type: "updates:changed", Payload: map[string]int{"updates": updated}})
 }
 
+// recheckStackImages re-checks just one stack's images and persists the fresh
+// results. Called after a deploy that can move an image (pull/update/up), because
+// the cached result is now a lie: a digest-tracked image (`:latest`) still reads
+// "update available" from the pre-pull local digest, so the row reappears the
+// moment the browser refetches — the "I updated it, it still says update" bug.
+// A semver update self-heals (the compose tag changes, so the cache key changes),
+// but going through the same path keeps both kinds consistent.
+//
+// This is deliberately not gated on a.checking: it is a handful of images, not a
+// full sweep, and skipping it is exactly what leaves the stale row behind.
+func (a *api) recheckStackImages(stack string) {
+	if a.checker == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	st, ok, err := a.stacks.Get(ctx, stack)
+	if err != nil || !ok || st.Origin != stacks.OriginManaged {
+		return
+	}
+	seen := map[string]bool{}
+	var images []string
+	for _, svc := range st.Services {
+		if svc.Image == "" || seen[svc.Image] || isEnvTemplated(svc.Image) {
+			continue
+		}
+		seen[svc.Image] = true
+		images = append(images, svc.Image)
+	}
+	if len(images) == 0 {
+		return
+	}
+
+	results := a.checker.CheckAll(ctx, images)
+	if a.db != nil {
+		if err := a.db.SaveImageChecks(results); err != nil {
+			a.logger.Warn("post-deploy recheck: save results", "stack", stack, "err", err)
+			return
+		}
+	}
+	a.logger.Info("post-deploy update recheck", "stack", stack, "images", len(images))
+	a.hub.NotifyChanged("updates:recheck")
+	a.hub.Publish(events.Message{Type: "updates:changed", Payload: map[string]int{"images": len(images)}})
+}
+
 // startUpdateScheduler runs periodic update checks. The cadence is re-read
 // from settings every minute (effectiveCheckInterval), so changing it in the
 // UI — including turning it on or off — applies without a restart.
