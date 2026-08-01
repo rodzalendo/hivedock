@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -411,5 +412,70 @@ func TestCSRFRequiredForMutations(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("mutation with CSRF header = %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// clientIP keys the login brute-force damper, so an attacker must not be able to
+// mint a fresh bucket per request by varying X-Forwarded-For. The header counts
+// only when the direct TCP peer is a configured trusted proxy — the reason chi's
+// middleware.RealIP (which always believed it) is no longer in the chain.
+func TestClientIPTrustsForwardedHeadersOnlyFromTrustedProxy(t *testing.T) {
+	_, trusted, _ := net.ParseCIDR("192.0.2.0/24")
+	a := &api{cfg: config.Config{TrustedProxyCIDRs: []*net.IPNet{trusted}}}
+
+	cases := []struct {
+		name    string
+		peer    string
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "untrusted peer cannot spoof via XFF",
+			peer:    "203.0.113.9:44321",
+			headers: map[string]string{"X-Forwarded-For": "10.9.9.9"},
+			want:    "203.0.113.9",
+		},
+		{
+			name:    "untrusted peer cannot spoof via X-Real-IP",
+			peer:    "203.0.113.9:44321",
+			headers: map[string]string{"X-Real-IP": "10.9.9.9"},
+			want:    "203.0.113.9",
+		},
+		{
+			name:    "trusted proxy: leftmost XFF entry is the client",
+			peer:    "192.0.2.7:1234",
+			headers: map[string]string{"X-Forwarded-For": "198.51.100.5, 192.0.2.7"},
+			want:    "198.51.100.5",
+		},
+		{
+			name:    "trusted proxy: X-Real-IP when there is no XFF",
+			peer:    "192.0.2.7:1234",
+			headers: map[string]string{"X-Real-IP": "198.51.100.5"},
+			want:    "198.51.100.5",
+		},
+		{
+			name: "trusted proxy without headers falls back to the peer",
+			peer: "192.0.2.7:1234",
+			want: "192.0.2.7",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+			req.RemoteAddr = tc.peer
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			// capturePeer normally runs as middleware; emulate it here.
+			var got string
+			capturePeer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				got = a.clientIP(r)
+			})).ServeHTTP(httptest.NewRecorder(), req)
+
+			if got != tc.want {
+				t.Errorf("clientIP = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

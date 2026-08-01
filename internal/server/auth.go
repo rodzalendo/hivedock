@@ -192,7 +192,7 @@ func (a *api) authSetup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "store unavailable")
 		return
 	}
-	ip := clientIP(r)
+	ip := a.clientIP(r)
 	key := "setup:" + ip
 	if d := a.login.retryAfter(key); d > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())+1))
@@ -272,7 +272,7 @@ func (a *api) authLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ip := clientIP(r)
+	ip := a.clientIP(r)
 	key := "login:" + username + "|" + ip
 	if d := a.login.retryAfter(key); d > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds())+1))

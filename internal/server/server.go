@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,11 +49,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.
 // package use New.
 func newServer(ctx context.Context, cfg config.Config, logger *slog.Logger, db *store.Store, stacksSvc *stacks.Manager, hub *events.Hub, host *hoststats.Sampler, dockerClient *docker.Client, icons *discovery.IconResolver, dist fs.FS) *api {
 	r := chi.NewRouter()
-	// capturePeer must run BEFORE RealIP: trusted-header auth decides trust from
-	// the real TCP peer, and RealIP overwrites RemoteAddr from X-Forwarded-For
-	// (which is attacker-controllable). Order matters for a security invariant.
+	// capturePeer records the genuine TCP peer for trusted-header auth. There is
+	// deliberately no chi middleware.RealIP here: it rewrites RemoteAddr from
+	// attacker-controlled headers for every request, whether or not a proxy set
+	// them (chi deprecated it for exactly that — GHSA-3fxj-6jh8-hvhx). Handlers
+	// that want the client address call a.clientIP, which only believes
+	// X-Forwarded-For when the peer is a configured trusted proxy.
 	r.Use(capturePeer)
-	r.Use(middleware.RealIP)
 	r.Use(requestLogger(logger))
 	r.Use(middleware.Recoverer)
 	r.Use(securityHeaders)
@@ -257,9 +260,9 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // rewriting. Unexported type prevents collisions with other context values.
 type peerCtxKey struct{}
 
-// capturePeer stashes the request's genuine TCP peer IP in the context before
-// middleware.RealIP can rewrite RemoteAddr from X-Forwarded-For. Trusted-header
-// auth reads this, never the (spoofable) rewritten address.
+// capturePeer stashes the request's genuine TCP peer IP in the context, so
+// trusted-header auth always has an address no header can influence, whatever
+// else later touches r.RemoteAddr.
 func capturePeer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -279,14 +282,40 @@ func peerIP(r *http.Request) string {
 	return ""
 }
 
-// clientIP returns the best-guess client IP for rate-limiting and audit logs —
-// r.RemoteAddr after middleware.RealIP has applied X-Forwarded-For (so it's the
-// real client behind a proxy). Unlike peerIP this is advisory, not a trust
-// boundary; it only keys a brute-force damper.
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+// clientIP returns the client address used to key the login brute-force damper.
+//
+// X-Forwarded-For is honored ONLY when the direct peer is a configured trusted
+// proxy; otherwise the peer address wins. That distinction is the whole point:
+// trusting the header unconditionally (what chi's deprecated middleware.RealIP
+// did) lets anyone reaching the server directly mint a fresh rate-limit bucket
+// per request by varying the header, which defeats the damper it feeds.
+//
+// Still not a trust boundary — authentication decisions use peerIP.
+func (a *api) clientIP(r *http.Request) string {
+	peer := peerIP(r)
+	if peer == "" {
+		peer = hostOnly(r.RemoteAddr)
+	}
+	if !a.peerTrusted(peer) {
+		return peer
+	}
+	// Leftmost XFF entry is the originating client as recorded by our own proxy.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+			return first
+		}
+	}
+	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+		return real
+	}
+	return peer
+}
+
+// hostOnly strips the port from a host:port address, tolerating a bare host.
+func hostOnly(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		return r.RemoteAddr
+		return addr
 	}
 	return host
 }
