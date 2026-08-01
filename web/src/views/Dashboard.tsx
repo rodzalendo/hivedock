@@ -1060,7 +1060,7 @@ function CardEditor({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  }, [open, setOpen]);
 
   async function save() {
     setBusy(true);
