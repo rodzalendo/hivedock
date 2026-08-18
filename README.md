@@ -20,13 +20,13 @@
 
 If you run Compose on one box, you probably juggle three tools: one to manage stacks, one for a start page, and one to check for updates. HiveDock rolls all three into one container, and because it reads your compose files and talks to Docker directly, the three parts actually know about each other.
 
-The nice part is what you get for free:
+Hivedock gives you:
 
 - The dashboard builds itself from what's running, so it can't go stale.
 - Update checks know your current version, so an old leftover tag can't pose as an upgrade.
 - Your compose files stay the source of truth. HiveDock shows them, it never copies them into a database. Delete the container and every stack keeps running.
 
-You keep your SSH-and-YAML workflow. You just get a UI that respects it.
+You keep your SSH-and-YAML workflow.
 
 ## Stacks
 
