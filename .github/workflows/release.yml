@@ -33,7 +33,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -42,7 +42,7 @@ jobs:
             type=raw,value=latest
 
       - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - uses: sigstore/cosign-installer@v3
 
       - name: Log in to GHCR
@@ -54,7 +54,7 @@ jobs:
 
       - name: Build and push (amd64 + arm64)
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
